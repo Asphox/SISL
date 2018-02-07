@@ -5,7 +5,7 @@ SISL is core-based on the C++ delegate implementation of Quynh Nguyen from https
 
 advantages:
 
--cross platfrom (Win32 call conventions ( cdecl/clrcall/stdcall... ) support is plained )
+-cross platfrom 
 
 -cross compiler 
 
