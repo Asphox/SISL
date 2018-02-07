@@ -4,11 +4,19 @@
 // Copyright (C) 2017-2018 SOTON "Asphox" Dylan (dylan.soton@telecom-sudparis.eu)
 //
 ////////////////////////////////////////////////////////////
-
 namespace sisl
 {
   namespace priv
   {
+
+    void SlotsManager::getDelegatesWithSameMemberFunction( const Generic_Delegate& gd , std::vector<uintptr_t>& ids){
+      for( auto& it : slots )
+      {
+        if( it.first->sameFunction(&gd) )
+          ids.push_back(reinterpret_cast<uintptr_t>(it.first));
+      }
+    }
+
     uintptr_t SlotsManager::connect_delegate(Generic_Delegate* gd){
       auto checker = slots.insert({gd,1});
       if(!checker.second)
@@ -46,7 +54,7 @@ namespace sisl
     }
 
     template< typename OBJ , typename RET , typename... ARGS >
-    uintptr_t SlotsManager::onConnect(OBJ* obj, RET(OBJ::*fp)(ARGS...)){
+    uintptr_t SlotsManager::onConnect(OBJ* obj, RET(OBJ::*fp)(ARGS...) ){
       Generic_Delegate* gd = new Delegate<RET,ARGS...>(obj,fp);
       return connect_delegate(gd);
     }
@@ -61,7 +69,6 @@ namespace sisl
     uintptr_t SlotsManager::onDisconnect(OBJ* obj , RET(OBJ::*fp)(ARGS...) ){
       Generic_Delegate* gd = new Delegate<RET,ARGS...>(obj,fp);
       return disconnect_delegate(gd);
-
     }
 
     template< typename RET , typename... ARGS >
@@ -92,13 +99,8 @@ namespace sisl
     }
 
     template< typename RET, typename OBJ , typename... ARGS >
-    void SlotsManager::getDelegatesWithSameMemberFunction( RET(OBJ::*fp)(ARGS...) , std::vector<uintptr_t>& related_ids ){
-      const Generic_Delegate& gd = Delegate<RET,ARGS...>(reinterpret_cast<OBJ*>(0),fp);
-      for( auto& it : slots )
-      {
-        if( it.first->sameFunction(&gd) )
-          related_ids.push_back(reinterpret_cast<uintptr_t>(it.first));
-      }
+    void SlotsManager::getDelegatesWithSameMemberFunction( RET(OBJ::*fp)(ARGS...) , std::vector<uintptr_t>& ids ){
+      getDelegatesWithSameMemberFunction(Delegate<RET,ARGS...>(reinterpret_cast<OBJ*>(0),fp));
     }
 
     template< typename... ARGS >
@@ -117,5 +119,7 @@ namespace sisl
         delete it.first;
       slots.clear();
     }
+
+
   }
 }

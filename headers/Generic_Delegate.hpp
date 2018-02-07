@@ -13,24 +13,15 @@
 #include <functional>
 #include <bitset>
 
+#include "CallStrategies.hpp"
+
 namespace sisl
 {
 
   class Generic_Delegate
   {
     protected:
-      class _Impl_class;
-      template< typename RET , typename... ARGS >
-      using fptr = RET(*)(ARGS...);
-      template< typename RET , typename... ARGS>
-      using mfptr = RET(_Impl_class::*)(ARGS...);
-
-
-      struct FunctionId
-      {
-        uint8_t raw_biggest_fptr[sizeof(mfptr<void>)];
-        _Impl_class* object = nullptr;
-      }id;
+      priv::Generic_callStrategy* gs = nullptr;
 
       std::bitset<3> flags; //0:isDanglingSafe ; 1:isFunctor ; 2:isMember !isStatic
       std::weak_ptr<SislObject> wptr_checker;
@@ -59,7 +50,7 @@ namespace sisl
       inline bool operator!=( const Generic_Delegate& target ) const;
 
       inline void* getObject(){
-        return id.object;
+        return gs->object;
       }
 
   };

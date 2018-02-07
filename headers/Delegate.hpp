@@ -26,7 +26,9 @@ namespace sisl
     private:
 
       template< typename OBJ >
-      void init_with_member(OBJ* obj, RET(OBJ::*fp)(ARGS...));
+      void init_with_member(OBJ* obj);
+
+      void init_with_static();
 
     public:
       Delegate() = default;
@@ -40,15 +42,6 @@ namespace sisl
       template< typename OBJ >
       Delegate( OBJ* obj , RET(OBJ::*fp)(ARGS...));
 
-      template< typename OBJ >
-      Delegate( OBJ* obj , RET(OBJ::*fp)(ARGS...) const );
-
-      template< typename OBJ >
-      Delegate( OBJ* obj , RET(OBJ::*fp)(ARGS...) volatile );
-
-      template< typename OBJ >
-      Delegate( OBJ* obj , RET(OBJ::*fp)(ARGS...) const volatile );
-
       Delegate( RET(*fp)(ARGS...) );
 
       template< typename... ARGS2 >
@@ -56,22 +49,8 @@ namespace sisl
 
       template< typename... ARGS2 >
       RET operator()(ARGS2... args);
+
   };
-
-  template< typename RET , typename OBJ , typename... ARGS >
-  inline Delegate<RET,ARGS...> make_delegate(OBJ* obj, RET(OBJ::*fp)(ARGS...) );
-
-  template< typename RET , typename OBJ , typename... ARGS >
-  inline Delegate<RET,ARGS...> make_delegate(OBJ* obj, RET(OBJ::*fp)(ARGS...) const );
-
-  template< typename RET , typename OBJ , typename... ARGS >
-  inline Delegate<RET,ARGS...> make_delegate(OBJ* obj, RET(OBJ::*fp)(ARGS...) volatile );
-
-  template< typename RET , typename OBJ , typename... ARGS >
-  inline Delegate<RET,ARGS...> make_delegate(OBJ* obj, RET(OBJ::*fp)(ARGS...) const volatile );
-
-  template< typename RET , typename... ARGS >
-  inline Delegate<RET,ARGS...> make_delegate(RET(*fp)(ARGS...));
 
 }
 

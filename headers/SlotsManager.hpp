@@ -33,13 +33,15 @@ namespace sisl
         uintptr_t connect_delegate(Generic_Delegate* gd);
         uintptr_t disconnect_delegate(Generic_Delegate* gd);
 
+        void getDelegatesWithSameMemberFunction( const Generic_Delegate& gd , std::vector<uintptr_t>& ids );
+
       public:
 
         template< typename RET , typename... ARGS >
         uintptr_t onConnect( const std::function<RET(ARGS...)>& functor);
 
         template< typename OBJ , typename RET , typename... ARGS >
-        uintptr_t onConnect(OBJ* obj, RET(OBJ::*fp)(ARGS...));
+        uintptr_t onConnect(OBJ* obj, RET(OBJ::*fp)(ARGS...) );
 
         template< typename RET , typename... ARGS >
         uintptr_t onConnect( RET(*fp)(ARGS...) );
@@ -61,6 +63,7 @@ namespace sisl
         void call(void* sender , const uintptr_t id , ARGS... args);
 
         ~SlotsManager();
+
     };
     SlotsManager slotsManager;
   }

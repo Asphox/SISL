@@ -21,6 +21,11 @@ namespace sisl
     private:
       std::vector<uintptr_t> slots_index;
       void* owner;
+
+      void connect( uintptr_t id );
+      void disconnect( uintptr_t id );
+      void disconnect_all( std::vector<uintptr_t>& ids);
+
     public:
       Signal(void* Owner = nullptr) : owner(Owner)
       {}
@@ -75,6 +80,7 @@ namespace sisl
 
       template< typename... ARGS2 >
       void operator()(ARGS2... args);
+
   };
 }
 

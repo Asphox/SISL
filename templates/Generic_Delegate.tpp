@@ -12,7 +12,8 @@ namespace sisl
 {
 
   Generic_Delegate::~Generic_Delegate(){
-    if(isFunctor()) delete reinterpret_cast<std::function<void()>*>(id.object);
+    if(isFunctor()) delete reinterpret_cast<std::function<void()>*>(gs->object);
+    delete static_cast<priv::CallStrategy<void>*>(gs);
   }
 
   template< typename RET , typename... ARGS >
@@ -41,24 +42,24 @@ namespace sisl
   }
 
   inline bool Generic_Delegate::sameOwner(const Generic_Delegate* target) const{
-    return (isMember() && target->isMember() && id.object == target->id.object);
+    return (isMember() && target->isMember() && gs->object == target->gs->object);
   }
 
   inline bool Generic_Delegate::sameFunction( const Generic_Delegate* target )const{
-    return (!isFunctor() && isMember() == target->isMember() && memcmp(id.raw_biggest_fptr,target->id.raw_biggest_fptr,sizeof(id.raw_biggest_fptr)) == 0);
+    return (!isFunctor() && isMember() == target->isMember() && memcmp(gs->raw_biggest_fptr,target->gs->raw_biggest_fptr,sizeof(priv::size_biggest_fptr)) == 0);
   }
 
   inline bool Generic_Delegate::operator<( const Generic_Delegate& target ) const{
-    return memcmp(&id,&target.id,sizeof(id)) < 0;
+    return memcmp(gs,target.gs,sizeof(*gs)) < 0;
   }
 
   template< typename RET2 , typename... ARGS2 >
   inline bool Generic_Delegate::operator==( const Generic_Delegate& target ) const{
-    return memcmp(&id,&target.id,sizeof(id)) == 0;
+    return memcmp(gs,target.gs,sizeof(*gs)) == 0;
   }
 
   template< typename RET2 , typename... ARGS2 >
   inline bool Generic_Delegate::operator!=( const Generic_Delegate& target ) const{
-    return memcmp(&id,&target.id,sizeof(id)) != 0;
+    return memcmp(gs,target.gs,sizeof(*gs)) != 0;
   }
 }
