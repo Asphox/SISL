@@ -18,6 +18,8 @@
 
 namespace sisl
 {
+  namespace priv
+  {
 
   template< typename RET , typename... ARGS >
   class Delegate : public Generic_Delegate
@@ -33,9 +35,9 @@ namespace sisl
     public:
       Delegate() = default;
 
-      Delegate( const Delegate& from ) = default;
+      Delegate(const Delegate&) = default;
 
-      Delegate( Delegate&& from ) = default;
+      Delegate(Delegate&&) = default;
 
       Delegate( const std::function<RET(ARGS...)>& functor );
 
@@ -51,7 +53,7 @@ namespace sisl
       RET operator()(ARGS2... args);
 
   };
-
+}
 }
 
 #ifndef SISL_DELEGATE_TPP

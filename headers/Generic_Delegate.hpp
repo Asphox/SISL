@@ -13,17 +13,26 @@
 #include <functional>
 #include <bitset>
 
+#include "SislObject.hpp"
 #include "CallStrategies.hpp"
 
 namespace sisl
 {
 
+  namespace priv
+  {
   class Generic_Delegate
   {
     protected:
-      priv::Generic_callStrategy* gs = nullptr;
+      priv::Generic_callStrategy* gs;
 
-      std::bitset<3> flags; //0:isDanglingSafe ; 1:isFunctor ; 2:isMember !isStatic
+      std::bitset<3> flags;
+      /*
+        [0]:isDanglingSafe
+        [1]:isFunctor
+        [2]:isMember / !isStatic
+     */
+
       std::weak_ptr<SislObject> wptr_checker;
 
     public:
@@ -54,6 +63,7 @@ namespace sisl
       }
 
   };
+}
 }
 
 #ifndef SISL_GENERIC_DELEGATE_TPP

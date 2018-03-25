@@ -9,23 +9,24 @@ namespace sisl
   namespace priv
   {
 
-    class _Impl_class;
+    class IMPLCLASS;
 
-    constexpr uint8_t size_biggest_fptr = sizeof(void(_Impl_class::*)());
+    constexpr uint8_t SIZE_BIGGEST_FPTR = sizeof(void(IMPLCLASS::*)());
 
     template< typename RET , typename... ARGS >
-    using impl_mfptr = RET(_Impl_class::*)(ARGS...);
+    using impl_mfptr = RET(IMPLCLASS::*)(ARGS...);
 
     template< typename RET , typename... ARGS >
     using impl_fptr = RET(*)(ARGS...);
 
     struct Generic_callStrategy
     {
-      uint8_t raw_biggest_fptr[size_biggest_fptr];
-      _Impl_class* object;
+      uint8_t raw_biggest_fptr[SIZE_BIGGEST_FPTR];
+      IMPLCLASS* object;
+      
       Generic_callStrategy(){
         object=nullptr;
-        memset(raw_biggest_fptr,0,size_biggest_fptr);
+        memset(raw_biggest_fptr,0,SIZE_BIGGEST_FPTR);
       }
     };
 

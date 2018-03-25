@@ -10,6 +10,8 @@
 
 namespace sisl
 {
+  namespace priv
+  {
 
   Generic_Delegate::~Generic_Delegate(){
     if(isFunctor()) delete reinterpret_cast<std::function<void()>*>(gs->object);
@@ -46,7 +48,7 @@ namespace sisl
   }
 
   inline bool Generic_Delegate::sameFunction( const Generic_Delegate* target )const{
-    return (!isFunctor() && isMember() == target->isMember() && memcmp(gs->raw_biggest_fptr,target->gs->raw_biggest_fptr,sizeof(priv::size_biggest_fptr)) == 0);
+    return (!isFunctor() && isMember() == target->isMember() && memcmp(gs->raw_biggest_fptr,target->gs->raw_biggest_fptr,sizeof(priv::SIZE_BIGGEST_FPTR)) == 0);
   }
 
   inline bool Generic_Delegate::operator<( const Generic_Delegate& target ) const{
@@ -62,4 +64,5 @@ namespace sisl
   inline bool Generic_Delegate::operator!=( const Generic_Delegate& target ) const{
     return memcmp(gs,target.gs,sizeof(*gs)) != 0;
   }
+}
 }

@@ -7,6 +7,9 @@
 
 namespace sisl
 {
+    namespace priv
+    {
+
     template< typename RET , typename... ARGS >
     template< typename OBJ >
     void Delegate<RET,ARGS...>::init_with_member(OBJ* obj){
@@ -15,7 +18,7 @@ namespace sisl
       flags[2] = true;
       if(isDanglingSafe())
         wptr_checker = reinterpret_cast<SislObject*>(obj)->__sisl__this;
-      gs->object = reinterpret_cast<priv::_Impl_class*>(obj);
+      gs->object = reinterpret_cast<priv::IMPLCLASS*>(obj);
     }
 
     template< typename RET , typename... ARGS >
@@ -26,12 +29,13 @@ namespace sisl
     }
 
     template< typename RET , typename... ARGS >
-    Delegate<RET,ARGS...>::Delegate( const std::function<RET(ARGS...)>& functor ){
+    Delegate<RET,ARGS...>::Delegate( const std::function<RET(ARGS...)>& functor )
+    {
       gs = new priv::Functor_callStrategy<RET,ARGS...>;
       flags[0] = false;
       flags[1] = true;
       flags[2] = false;
-      gs->object = reinterpret_cast<priv::_Impl_class*>(new std::function<RET(ARGS...)>);
+      gs->object = reinterpret_cast<priv::IMPLCLASS*>(new std::function<RET(ARGS...)>);
       *reinterpret_cast<std::function<RET(ARGS...)>*>(gs->object) = functor;
     }
 
@@ -39,8 +43,8 @@ namespace sisl
     template< typename OBJ >
     Delegate<RET,ARGS...>::Delegate( OBJ* obj , RET(OBJ::*fp)(ARGS...)){
       gs = new priv::Method_callStrategy<RET,ARGS...>;
-      class _Impl2_class : public OBJ{};
-      typedef RET(_Impl2_class::*generic_fp)(ARGS...);
+      class IMPLCLASSTMP : public OBJ{};
+      typedef RET(IMPLCLASSTMP::*generic_fp)(ARGS...);
       reinterpret_cast<generic_fp&>(gs->raw_biggest_fptr) = fp;
       init_with_member(obj);
     }
@@ -64,5 +68,5 @@ namespace sisl
       static_assert( sizeof...(ARGS2) != sizeof...(ARGS)-1," [SISL] Delegate called with bad number of arguments ! ");
       return static_cast<priv::CallStrategy<RET,ARGS...>*>(gs)->call(args...);
     }
-
+}
 }

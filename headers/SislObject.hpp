@@ -17,6 +17,11 @@ namespace sisl
     public:
       std::shared_ptr<SislObject> __sisl__this;
       void* __sisl__sender = nullptr;
+
+      SislObject(const SislObject&) = default;
+
+      SislObject(SislObject&&) = default;
+
       SislObject(){
         __sisl__this = std::make_shared<SislObject>(*this);
       }
@@ -24,6 +29,11 @@ namespace sisl
       template< typename T >
       inline T* getSender(){
         return reinterpret_cast<T*>(__sisl__sender);
+      }
+
+      template< typename T >
+      inline T getSender(){
+          return reinterpret_cast<T>(__sisl__sender);
       }
   };
 }

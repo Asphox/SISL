@@ -5,9 +5,9 @@ SISL is core-based on the C++ delegate implementation of Quynh Nguyen from https
 
 advantages:
 
--cross platfrom 
+-cross platfrom
 
--cross compiler 
+-cross compiler
 
 -plain C++11 code
 
@@ -19,4 +19,33 @@ advantages:
 
 ...
 
-TUTORIAL SOON
+##Tutorial
+
+First, include the Sisl header.
+```cpp
+#include "SISL/Sisl.hpp"
+```
+
+#How to create a signal ?
+
+The standard way :
+
+```cpp
+//inside a class
+public:
+sisl::Signal<ARGS> mySignal = sisl::Signal<ARGS>(this);
+
+//outside a class
+sisl::Signal<ARGS> mySignal;
+```
+
+or with macros :
+
+```cpp
+//inside a class
+public:
+SIGNAL(mySignal,ARGS);
+
+//outside a class
+SSIGNAL(mySignal,ARGS);
+```
