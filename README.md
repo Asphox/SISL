@@ -26,7 +26,7 @@ First, include the Sisl header.
 #include "SISL/Sisl.hpp"
 ```
 
-#How to create a signal ?
+###How to create a signal ?
 
 The standard way :
 
@@ -48,4 +48,41 @@ SIGNAL(mySignal,ARGS);
 
 //outside a class
 SSIGNAL(mySignal,ARGS);
+```
+###How to use and activate advanced functionalites of SISL ?
+
+Just inherit from sisl::SislObject in your classes.
+
+```cpp
+class MyClass : public sisl::SislObject
+{
+
+};
+```
+
+###How to connect functions or functors to a signal ?
+
+By using the connect method of the signal, you can connect :
+-static functions ( C-style )
+-member functions ( normal, const or/and volatile )
+-std::function objects
+-lambda functions
+
+<!>WARNING<!> win32 special calling conventions are not supporter yet !
+
+The only restriction is that the arguments of the signal and the function must match.
+
+```cpp
+//static function
+mySignal.connect(&myStaticFunction);
+
+//member function
+mySignal.connect(&instance,&Class::myMemberFunction);
+
+//std::function
+std::function<F> stdFunction;
+mySignal.connect(stdFunction);
+
+//lambda function
+mySignal.connect([](){});
 ```
