@@ -24,6 +24,11 @@ Macro for static signals
 ==================================*/
 #define SSIGNAL(name,...) sisl::Signal<__VA_ARGS__> name;
 
+/*================================
+Void macro for emit readability
+==================================*/
+#define emit
+
 #else
 #error [SISL] YOU NEED TO SET YOUR COMPILER WITH ISO C++11 OR MORE !
 #endif

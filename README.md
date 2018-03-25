@@ -19,14 +19,14 @@ advantages:
 
 ...
 
-##Tutorial
+## Tutorial
 
 First, include the Sisl header.
 ```cpp
 #include "SISL/Sisl.hpp"
 ```
 
-###How to create a signal ?
+### How to create a signal ?
 
 The standard way :
 
@@ -49,7 +49,7 @@ SIGNAL(mySignal,ARGS);
 //outside a class
 SSIGNAL(mySignal,ARGS);
 ```
-###How to use and activate advanced functionalites of SISL ?
+### How to use and activate <ADVANCED> functionalites of SISL ?
 
 Just inherit from sisl::SislObject in your classes.
 
@@ -60,7 +60,7 @@ class MyClass : public sisl::SislObject
 };
 ```
 
-###How to connect functions or functors to a signal ?
+### How to connect functions or functors to a signal ?
 
 By using the connect method of the signal, you can connect :
 -static functions ( C-style )
@@ -85,4 +85,54 @@ mySignal.connect(stdFunction);
 
 //lambda function
 mySignal.connect([](){});
+```
+
+### How to emit a signal ?
+
+By using the emit method or the () operator of Signal.
+Don't forget to pass parameters if the signal must emit data.
+```cpp
+mySignal.emit(PARAMETERS);
+//or
+mySignal(PARAMETERS);
+//or for readability
+emit mySignal(PARAMETERS);
+```
+
+### How to disconnect a function of a signal ?
+
+By using the disconnect functions.
+<!>WARNING<!> You can't disconnect std::functions and lambda functions except with disconnect_all() !
+
+```cpp
+//disconnect static function
+mySignal.disconnect(&myStaticFunction);
+
+//disconnect member function
+mySignal.disconnect(&instance,&Class::myMemberFunction);
+
+//disconnect all member functions owned by an instance
+mySignal.disconnect_all(&instance);
+
+//disconnect this specific member function from all instances
+mySignal.disconnect_all(&Class::myMemberFunction);
+
+//disconnect ... all
+mySignal.disconnect_all();
+
+```
+
+### <ADVANCED> How to retrieve the address of the emitting object (only for member signals) ?
+
+By using the getSender<TYPE>() method of the SislObject class :
+
+```cpp
+class MyClass : public sisl::SislObject
+{
+  public:
+    void function(PARAMETERS)
+    {
+      getSender<SENDER_TYPE>()->someFunction();
+    }
+};
 ```
