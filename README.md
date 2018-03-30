@@ -17,6 +17,8 @@ advantages:
 
 -dangling safe ( you can't call a Delegate on a member function from a destroyed object )
 
+-thread safe
+
 ...
 
 ## Tutorial
@@ -132,7 +134,8 @@ class MyClass : public sisl::SislObject
   public:
     void function(PARAMETERS)
     {
-      getSender<SENDER_TYPE>()->someFunction();
+      if( isSenderKnown() )
+        getSender<SENDER_TYPE>()->someFunction();
     }
 };
 ```
