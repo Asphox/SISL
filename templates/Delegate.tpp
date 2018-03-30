@@ -36,7 +36,7 @@ namespace sisl
       flags[1] = true;
       flags[2] = false;
       gs->object = reinterpret_cast<priv::IMPLCLASS*>(new std::function<RET(ARGS...)>);
-      *reinterpret_cast<std::function<RET(ARGS...)>*>(gs->object) = functor;
+      *reinterpret_cast<std::function<void(ARGS...)>*>(gs->object) = functor;
     }
 
     template< typename RET , typename... ARGS >
@@ -52,21 +52,21 @@ namespace sisl
     template< typename RET , typename... ARGS >
     Delegate<RET,ARGS...>::Delegate( RET(*fp)(ARGS...) ){
       gs = new priv::Static_callStrategy<RET,ARGS...>;
-      reinterpret_cast<priv::impl_fptr<RET,ARGS...>&>(gs->raw_biggest_fptr) = fp;
+      reinterpret_cast<priv::impl_fptr<ARGS...>&>(gs->raw_biggest_fptr) = fp;
       init_with_static();
     }
 
     template< typename RET , typename... ARGS >
     template< typename... ARGS2 >
-    inline RET Delegate<RET,ARGS...>::call(ARGS2... args){
-      return operator()(args...);
+    inline void Delegate<RET,ARGS...>::call(ARGS2... args){
+      operator()(args...);
     }
 
     template< typename RET , typename... ARGS >
     template< typename... ARGS2 >
-    RET Delegate<RET,ARGS...>::operator()(ARGS2... args){
+    void Delegate<RET,ARGS...>::operator()(ARGS2... args){
       static_assert( sizeof...(ARGS2) != sizeof...(ARGS)-1," [SISL] Delegate called with bad number of arguments ! ");
-      return static_cast<priv::CallStrategy<RET,ARGS...>*>(gs)->call(args...);
+      static_cast<priv::CallStrategy<ARGS...>*>(gs)->call(args...);
     }
 }
 }

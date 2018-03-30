@@ -104,14 +104,20 @@ namespace sisl
     }
 
     template< typename... ARGS >
-    void SlotsManager::call(void* sender , const uintptr_t id , ARGS... args){
+    bool SlotsManager::call(void* sender , const uintptr_t id , ARGS... args){
       auto it = slots.find(reinterpret_cast<Generic_Delegate*>(id));
-      if(sender && it->first->isDanglingSafe())
-        reinterpret_cast<SislObject*>(it->first->getObject())->__sisl__sender = sender;
-      if( it != slots.end() )
-        it->first->call<void,ARGS...>(args...);
-      if(sender && it->first->isDanglingSafe())
-        reinterpret_cast<SislObject*>(it->first->getObject())->__sisl__sender = nullptr;
+      if( it == slots.end() )
+        return false;
+      if( it->first->isDanglingSafe() && it->first->isDangling() )
+      {
+        slots.erase(it);
+        return false;
+      }
+      else
+      {
+        it->first->call<ARGS...>(sender,args...);
+        return true;
+      }
     }
 
     SlotsManager::~SlotsManager(){

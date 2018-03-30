@@ -145,9 +145,12 @@ namespace sisl
   template< typename... ARGS >
   template< typename... ARGS2 >
   void Signal<ARGS...>::emit(ARGS2... args){
-    for( auto& it : slots_index )
-      priv::slotsManager.call<ARGS...>(owner,it,static_cast<ARGS>(args)...);
+    for( auto it = slots_index.begin() ; it != slots_index.end(); )
+    {
+        if(!priv::slotsManager.call<ARGS...>(owner,*it,static_cast<ARGS>(args)...))
+            it = slots_index.erase(it);
+        else
+            ++it;
+    }
   }
-
-
 }

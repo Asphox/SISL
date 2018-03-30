@@ -13,11 +13,11 @@ namespace sisl
 
     constexpr uint8_t SIZE_BIGGEST_FPTR = sizeof(void(IMPLCLASS::*)());
 
-    template< typename RET , typename... ARGS >
-    using impl_mfptr = RET(IMPLCLASS::*)(ARGS...);
+    template< typename... ARGS >
+    using impl_mfptr = void(IMPLCLASS::*)(ARGS...);
 
-    template< typename RET , typename... ARGS >
-    using impl_fptr = RET(*)(ARGS...);
+    template< typename... ARGS >
+    using impl_fptr = void(*)(ARGS...);
 
     struct Generic_callStrategy
     {
@@ -30,34 +30,34 @@ namespace sisl
       }
     };
 
-    template< typename RET , typename... ARGS >
+    template< typename... ARGS >
     struct CallStrategy : public Generic_callStrategy
     {
-      virtual RET call(ARGS...) = 0;
-      virtual ~CallStrategy(){}
+      virtual void call(ARGS...) = 0;
+      virtual ~CallStrategy() = default;
     };
 
     template< typename RET , typename... ARGS >
-    struct Method_callStrategy : public CallStrategy<RET,ARGS...>
+    struct Method_callStrategy : public CallStrategy<ARGS...>
     {
-      virtual RET call(ARGS... args){
-        return (this->object->*(*reinterpret_cast<impl_mfptr<RET,ARGS...>*>(&this->raw_biggest_fptr)))(args...);
+      virtual void call(ARGS... args){
+        (this->object->*(*reinterpret_cast<impl_mfptr<ARGS...>*>(&this->raw_biggest_fptr)))(args...);
       }
     };
 
     template< typename RET , typename... ARGS >
-    struct Static_callStrategy : public CallStrategy<RET,ARGS...>
+    struct Static_callStrategy : public CallStrategy<ARGS...>
     {
-      virtual RET call(ARGS... args){
-        return (*reinterpret_cast<impl_fptr<RET,ARGS...>*>(&this->raw_biggest_fptr))(args...);
+      virtual void call(ARGS... args){
+        (*reinterpret_cast<impl_fptr<ARGS...>*>(&this->raw_biggest_fptr))(args...);
       }
     };
 
     template< typename RET , typename... ARGS >
-    struct Functor_callStrategy : public CallStrategy<RET,ARGS...>
+    struct Functor_callStrategy : public CallStrategy<ARGS...>
     {
-      virtual RET call(ARGS... args){
-        return (*reinterpret_cast<std::function<RET(ARGS...)>*>(this->object))(args...);
+      virtual void call(ARGS... args){
+        (*reinterpret_cast<std::function<void(ARGS...)>*>(this->object))(args...);
       }
     };
 

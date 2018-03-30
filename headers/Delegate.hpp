@@ -47,10 +47,10 @@ namespace sisl
       Delegate( RET(*fp)(ARGS...) );
 
       template< typename... ARGS2 >
-      inline RET call(ARGS2... args);
+      void call(ARGS2... args);
 
       template< typename... ARGS2 >
-      RET operator()(ARGS2... args);
+      void operator()(ARGS2... args);
 
   };
 }

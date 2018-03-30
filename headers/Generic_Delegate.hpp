@@ -12,6 +12,7 @@
 #include <cstring>
 #include <functional>
 #include <bitset>
+#include <mutex>
 
 #include "SislObject.hpp"
 #include "CallStrategies.hpp"
@@ -34,6 +35,7 @@ namespace sisl
      */
 
       std::weak_ptr<SislObject> wptr_checker;
+      std::mutex mtx;
 
     public:
 
@@ -48,7 +50,7 @@ namespace sisl
       inline bool sameOwner(const Generic_Delegate*) const;
 
       template< typename RET , typename... ARGS >
-      RET call(ARGS... args);
+      void call(void* sender,ARGS... args);
 
       inline bool operator<( const Generic_Delegate& target ) const;
 

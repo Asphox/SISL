@@ -60,7 +60,7 @@ namespace sisl
         void getDelegatesWithSameMemberFunction( RET(OBJ::*fp)(ARGS...) , std::vector<uintptr_t>& related_ids );
 
         template< typename... ARGS >
-        void call(void* sender , const uintptr_t id , ARGS... args);
+        bool call(void* sender , const uintptr_t id , ARGS... args);
 
         ~SlotsManager();
 

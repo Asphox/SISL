@@ -15,12 +15,20 @@ namespace sisl
 
   Generic_Delegate::~Generic_Delegate(){
     if(isFunctor()) delete reinterpret_cast<std::function<void()>*>(gs->object);
-    delete static_cast<priv::CallStrategy<void>*>(gs);
+    delete static_cast<priv::CallStrategy<>*>(gs);
   }
 
   template< typename RET , typename... ARGS >
-  RET Generic_Delegate::call(ARGS... args){
-    return static_cast<Delegate<RET,ARGS...>*>(this)->call(args...);
+  void Generic_Delegate::call(void* sender,ARGS... args){
+    std::lock_guard<std::mutex> lck(mtx);
+    if( isDanglingSafe() && !isDangling() ) {
+        reinterpret_cast<SislObject *>(getObject())->__sisl__sender = sender;
+        static_cast<Delegate<RET, ARGS...> *>(this)->call(args...);
+        reinterpret_cast<SislObject *>(getObject())->__sisl__sender = nullptr;
+    }
+    else{
+        static_cast<Delegate<RET, ARGS...> *>(this)->call(args...);
+    }
   }
 
   inline bool Generic_Delegate::isDangling() const{

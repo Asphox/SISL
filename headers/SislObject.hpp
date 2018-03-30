@@ -26,9 +26,9 @@ namespace sisl
         __sisl__this = std::make_shared<SislObject>(*this);
       }
 
-      template< typename T >
-      inline T* getSender(){
-        return reinterpret_cast<T*>(__sisl__sender);
+      inline bool isSenderKnown() const
+      {
+          return __sisl__sender != nullptr;
       }
 
       template< typename T >
