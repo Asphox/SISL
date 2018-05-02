@@ -32,7 +32,7 @@ namespace sisl
   }
 
   inline bool Generic_Delegate::isDangling() const{
-    return isDanglingSafe() && wptr_checker.expired();
+    return isDanglingSafe() && !checker.valid();
   }
 
   inline bool Generic_Delegate::isDanglingSafe() const{

@@ -17,7 +17,7 @@ namespace sisl
       flags[1] = false;
       flags[2] = true;
       if(isDanglingSafe())
-        wptr_checker = reinterpret_cast<SislObject*>(obj)->__sisl__this;
+        checker = reinterpret_cast<SislObject*>(obj);
       gs->object = reinterpret_cast<priv::IMPLCLASS*>(obj);
     }
 

@@ -8,23 +8,20 @@
 #ifndef SISL_OBJECT_HPP
 #define SISL_OBJECT_HPP
 
-#include <memory>
+#include "Utils.h"
 
 namespace sisl
 {
-  class SislObject
+  class SislObject : public enable_check_from_this<SislObject>
   {
     public:
-      std::shared_ptr<SislObject> __sisl__this;
       void* __sisl__sender = nullptr;
+
+      SislObject() = default;
 
       SislObject(const SislObject&) = default;
 
       SislObject(SislObject&&) = default;
-
-      SislObject(){
-        __sisl__this = std::make_shared<SislObject>(*this);
-      }
 
       inline bool isSenderKnown() const
       {

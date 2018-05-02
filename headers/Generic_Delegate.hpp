@@ -8,7 +8,6 @@
 #ifndef SISL_GENERIC_DELEGATE_HPP
 #define SISL_GENERIC_DELEGATE_HPP
 
-#include <memory>
 #include <cstring>
 #include <functional>
 #include <bitset>
@@ -16,6 +15,7 @@
 
 #include "SislObject.hpp"
 #include "CallStrategies.hpp"
+#include "Utils.h"
 
 namespace sisl
 {
@@ -34,7 +34,7 @@ namespace sisl
         [2]:isMember / !isStatic
      */
 
-      std::weak_ptr<SislObject> wptr_checker;
+      check_ptr<SislObject> checker;
       std::mutex mtx;
 
     public:
