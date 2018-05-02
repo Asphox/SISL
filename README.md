@@ -88,6 +88,10 @@ mySignal.connect(stdFunction);
 //lambda function
 mySignal.connect([](){});
 ```
+Remember that you can keep a connection id with : 
+```cpp
+Id id = mySignal.connect(...);
+```
 
 ### How to emit a signal ?
 
@@ -97,14 +101,12 @@ Don't forget to pass parameters if the signal must emit data.
 mySignal.emit(PARAMETERS);
 //or
 mySignal(PARAMETERS);
-//or for readability
-emit mySignal(PARAMETERS);
 ```
 
 ### How to disconnect a function of a signal ?
 
 By using the disconnect functions.
-<!>WARNING<!> You can't disconnect std::functions and lambda functions except with disconnect_all() !
+<!>WARNING<!> You can't disconnect std::functions and lambda functions except with disconnect_all() or with an id !
 
 ```cpp
 //disconnect static function
@@ -122,6 +124,8 @@ mySignal.disconnect_all(&Class::myMemberFunction);
 //disconnect ... all
 mySignal.disconnect_all();
 
+//disconnect with id
+mySignal.disconnect(id);
 ```
 
 ### <ADVANCED> How to retrieve the address of the emitting object (only for member signals) ?
