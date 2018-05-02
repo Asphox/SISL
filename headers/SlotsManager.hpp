@@ -13,6 +13,7 @@
 #include <vector>
 #include "Generic_Delegate.hpp"
 #include "Delegate.hpp"
+#include "Utils.h"
 
 namespace sisl
 {
@@ -30,37 +31,37 @@ namespace sisl
       private:
         std::map<Generic_Delegate*,uint16_t,ptr_generic_delegate_cmp> slots;
 
-        uintptr_t connect_delegate(Generic_Delegate* gd);
-        uintptr_t disconnect_delegate(Generic_Delegate* gd);
+        Id connect_delegate(Generic_Delegate* gd);
+        Id disconnect_delegate(Generic_Delegate* gd);
 
-        void getDelegatesWithSameMemberFunction( const Generic_Delegate& gd , std::vector<uintptr_t>& ids );
+        void getDelegatesWithSameMemberFunction( const Generic_Delegate& gd , std::vector<Id>& ids );
 
       public:
 
         template< typename RET , typename... ARGS >
-        uintptr_t onConnect( const std::function<RET(ARGS...)>& functor);
+        Id onConnect( const std::function<RET(ARGS...)>& functor);
 
         template< typename OBJ , typename RET , typename... ARGS >
-        uintptr_t onConnect(OBJ* obj, RET(OBJ::*fp)(ARGS...) );
+        Id onConnect(OBJ* obj, RET(OBJ::*fp)(ARGS...) );
 
         template< typename RET , typename... ARGS >
-        uintptr_t onConnect( RET(*fp)(ARGS...) );
+        Id onConnect( RET(*fp)(ARGS...) );
 
         template< typename OBJ , typename RET , typename... ARGS >
-        uintptr_t onDisconnect(OBJ* obj , RET(OBJ::*fp)(ARGS...));
+        Id onDisconnect(OBJ* obj , RET(OBJ::*fp)(ARGS...));
 
         template< typename RET , typename... ARGS >
-        uintptr_t onDisconnect( RET(*fp)(ARGS...));
+        Id onDisconnect( RET(*fp)(ARGS...));
 
-        void onDisconnect( uintptr_t id );
+        Id onDisconnect( Id id );
 
-        void getDelegatesOwnedBy( void* obj , std::vector<uintptr_t>& related_ids );
+        void getDelegatesOwnedBy( void* obj , std::vector<Id>& related_ids );
 
         template< typename RET , typename OBJ , typename... ARGS >
-        void getDelegatesWithSameMemberFunction( RET(OBJ::*fp)(ARGS...) , std::vector<uintptr_t>& related_ids );
+        void getDelegatesWithSameMemberFunction( RET(OBJ::*fp)(ARGS...) , std::vector<Id>& related_ids );
 
         template< typename... ARGS >
-        bool call(void* sender , const uintptr_t id , ARGS... args);
+        bool call(void* sender , const Id id , ARGS... args);
 
         ~SlotsManager();
 

@@ -12,20 +12,22 @@
 #include <algorithm>
 #include <functional>
 #include <cstddef>
+#include "Utils.h"
 #include "SlotsManager.hpp"
 
 namespace sisl
 {
+
   template< typename... ARGS >
   class Signal
   {
     private:
-      std::vector<uintptr_t> slots_index;
+      std::vector<Id> slots_index;
       void* owner;
 
-      void connect( uintptr_t id );
-      void disconnect( uintptr_t id );
-      void disconnect_all( std::vector<uintptr_t>& ids);
+      Id connect_id( Id id );
+      void disconnect_id( Id id );
+      void disconnect_all_id( std::vector<Id>& ids);
 
     public:
 
@@ -39,37 +41,42 @@ namespace sisl
       /*==============================================
       Connect a functor (std::function or lambda)
       ===============================================*/
-      void connect(const std::function<void(ARGS...)>& std_fct);
+      Id connect(const std::function<void(ARGS...)>& std_fct);
 
       /*==============================================
       Connect a member function
       ===============================================*/
       template< typename OBJ , typename RET >
-      void connect( OBJ* obj , RET(OBJ::*fp)(ARGS...) );
+      Id connect( OBJ* obj , RET(OBJ::*fp)(ARGS...) );
 
       /*==============================================
       Connect a const member function
       ===============================================*/
       template< typename OBJ , typename RET >
-      inline void connect( OBJ* obj , RET(OBJ::*fp)(ARGS...) const);
+      inline Id connect( OBJ* obj , RET(OBJ::*fp)(ARGS...) const);
 
       /*==============================================
       Connect a volatile member function
       ===============================================*/
       template< typename OBJ , typename RET >
-      inline void connect( OBJ* obj , RET(OBJ::*fp)(ARGS...) volatile);
+      inline Id connect( OBJ* obj , RET(OBJ::*fp)(ARGS...) volatile);
 
       /*==============================================
       Connect a const volatile member function
       ===============================================*/
       template< typename OBJ , typename RET >
-      inline void connect( OBJ* obj , RET(OBJ::*fp)(ARGS...) const volatile);
+      inline Id connect( OBJ* obj , RET(OBJ::*fp)(ARGS...) const volatile);
 
       /*==============================================
       Connect a static function
       ===============================================*/
       template< typename RET >
-      void connect( RET(*fp)(ARGS...) );
+      Id connect( RET(*fp)(ARGS...) );
+
+      /*==============================================
+      Disconnect with id
+      ===============================================*/
+      void disconnect(Id id);
 
       /*==============================================
       Disconnect a member function

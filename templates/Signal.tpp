@@ -8,21 +8,22 @@
 namespace sisl
 {
   template< typename... ARGS >
-  void Signal<ARGS...>::connect( uintptr_t id ){
+  Id Signal<ARGS...>::connect_id( Id id ){
     auto it = std::find(slots_index.begin(),slots_index.end(),id);
     if(it == slots_index.end())
       slots_index.push_back(id);
+    return id;
   }
 
   template< typename... ARGS >
-  void Signal<ARGS...>::disconnect( uintptr_t id ){
+  void Signal<ARGS...>::disconnect_id( Id id ){
     auto it = std::find(slots_index.begin(),slots_index.end(),id);
     if( it != slots_index.end() )
       slots_index.erase(it);
   }
 
   template< typename... ARGS >
-  void Signal<ARGS...>::disconnect_all( std::vector<uintptr_t>& ids ){
+  void Signal<ARGS...>::disconnect_all_id( std::vector<Id>& ids ){
     auto it = slots_index.begin();
     for( size_t i=0 ; i<ids.size(); i++ )
     {
@@ -36,44 +37,49 @@ namespace sisl
   }
 
   template< typename... ARGS >
-  void Signal<ARGS...>::connect( const std::function<void(ARGS...)>& functor){
-    slots_index.push_back(priv::slotsManager.onConnect(functor));
+  Id Signal<ARGS...>::connect( const std::function<void(ARGS...)>& functor){
+    return connect_id(priv::slotsManager.onConnect(functor));
   }
 
   template< typename... ARGS >
   template< typename OBJ , typename RET >
-  void Signal<ARGS...>::connect( OBJ* obj , RET(OBJ::*fp)(ARGS...) ){
-    connect(priv::slotsManager.onConnect(obj,fp));
+  Id Signal<ARGS...>::connect( OBJ* obj , RET(OBJ::*fp)(ARGS...) ){
+    return connect_id(priv::slotsManager.onConnect(obj,fp));
   }
 
   template< typename... ARGS >
   template< typename OBJ , typename RET >
-  inline void Signal<ARGS...>::connect( OBJ* obj , RET(OBJ::*fp)(ARGS...) const){
-    connect(obj,reinterpret_cast<RET(OBJ::*)(ARGS...)>(fp));
+  inline Id Signal<ARGS...>::connect( OBJ* obj , RET(OBJ::*fp)(ARGS...) const){
+    return connect_id(obj,reinterpret_cast<RET(OBJ::*)(ARGS...)>(fp));
   }
 
   template< typename... ARGS >
   template< typename OBJ , typename RET >
-  inline void Signal<ARGS...>::connect( OBJ* obj , RET(OBJ::*fp)(ARGS...) volatile){
-    connect(obj,reinterpret_cast<RET(OBJ::*)(ARGS...)>(fp));
+  inline Id Signal<ARGS...>::connect( OBJ* obj , RET(OBJ::*fp)(ARGS...) volatile){
+    return connect_id(obj,reinterpret_cast<RET(OBJ::*)(ARGS...)>(fp));
   }
 
   template< typename... ARGS >
   template< typename OBJ , typename RET >
-  inline void Signal<ARGS...>::connect( OBJ* obj , RET(OBJ::*fp)(ARGS...) const volatile){
-    connect(obj,reinterpret_cast<RET(OBJ::*)(ARGS...)>(fp));
+  inline Id Signal<ARGS...>::connect( OBJ* obj , RET(OBJ::*fp)(ARGS...) const volatile){
+    return connect_id(obj,reinterpret_cast<RET(OBJ::*)(ARGS...)>(fp));
   }
 
   template< typename... ARGS >
   template< typename RET >
-  void Signal<ARGS...>::connect( RET(*fp)(ARGS...) ){
-    connect(priv::slotsManager.onConnect(fp));
+  Id Signal<ARGS...>::connect( RET(*fp)(ARGS...) ){
+    return connect_id(priv::slotsManager.onConnect(fp));
+  }
+
+  template< typename... ARGS >
+  inline void Signal<ARGS...>::disconnect(Id id){
+    disconnect_id(priv::slotsManager.onDisconnect(id));
   }
 
   template< typename... ARGS >
   template< typename OBJ , typename RET >
   inline void Signal<ARGS...>::disconnect( OBJ* obj , RET(OBJ::*fp)(ARGS...)){
-    disconnect(priv::slotsManager.onDisconnect(obj,fp));
+    disconnect_id(priv::slotsManager.onDisconnect(obj,fp));
   }
 
   template< typename... ARGS >
@@ -97,12 +103,12 @@ namespace sisl
   template< typename... ARGS >
   template< typename RET >
   inline void Signal<ARGS...>::disconnect( RET(*fp)(ARGS...)){
-    disconnect(priv::slotsManager.onDisconnect(fp));
+    disconnect_id(priv::slotsManager.onDisconnect(fp));
   }
 
   template< typename... ARGS >
   void Signal<ARGS...>::disconnect_all(){
-    for( uintptr_t& it : slots_index )
+    for( Id& it : slots_index )
     {
       priv::slotsManager.onDisconnect(it);
     }
@@ -111,7 +117,7 @@ namespace sisl
 
   template< typename... ARGS >
   void Signal<ARGS...>::disconnect_all( void* obj ){
-    std::vector<uintptr_t> ids;
+    std::vector<Id> ids;
     priv::slotsManager.getDelegatesOwnedBy(obj,ids);
     disconnect_all(ids);
   }
@@ -119,7 +125,7 @@ namespace sisl
   template< typename... ARGS >
   template< typename OBJ , typename RET >
   void Signal<ARGS...>::disconnect_all( RET(OBJ::*fp)(ARGS...) ){
-    std::vector<uintptr_t> ids;
+    std::vector<Id> ids;
     priv::slotsManager.getDelegatesWithSameMemberFunction(fp,ids);
     disconnect_all(ids);
   }
