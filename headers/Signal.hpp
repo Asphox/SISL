@@ -33,15 +33,15 @@ namespace sisl
 
       Signal(const Signal&) = default;
 
-      Signal(Signal&&) = default;
+      Signal(Signal&&) noexcept = default;
 
-      Signal( void* Owner = nullptr ) : owner(Owner)
+      explicit Signal( void* Owner = nullptr ) : owner(Owner)
       {}
 
       /*==============================================
       Connect a functor (std::function or lambda)
       ===============================================*/
-      Id connect(const std::function<void(ARGS...)>& std_fct);
+      Id connect(const std::function<void(ARGS...)>&);
 
       /*==============================================
       Connect a member function

@@ -21,13 +21,8 @@ namespace sisl
 
     struct Generic_callStrategy
     {
-      uint8_t raw_biggest_fptr[SIZE_BIGGEST_FPTR];
-      IMPLCLASS* object;
-      
-      Generic_callStrategy(){
-        object=nullptr;
-        memset(raw_biggest_fptr,0,SIZE_BIGGEST_FPTR);
-      }
+      uint8_t raw_biggest_fptr[SIZE_BIGGEST_FPTR] = {};
+      IMPLCLASS* object = nullptr;
     };
 
     template< typename... ARGS >
@@ -40,7 +35,7 @@ namespace sisl
     template< typename RET , typename... ARGS >
     struct Method_callStrategy : public CallStrategy<ARGS...>
     {
-      virtual void call(ARGS... args){
+      void call(ARGS... args) final {
         (this->object->*(*reinterpret_cast<impl_mfptr<ARGS...>*>(&this->raw_biggest_fptr)))(args...);
       }
     };
@@ -48,7 +43,7 @@ namespace sisl
     template< typename RET , typename... ARGS >
     struct Static_callStrategy : public CallStrategy<ARGS...>
     {
-      virtual void call(ARGS... args){
+      void call(ARGS... args) final {
         (*reinterpret_cast<impl_fptr<ARGS...>*>(&this->raw_biggest_fptr))(args...);
       }
     };
@@ -56,7 +51,7 @@ namespace sisl
     template< typename RET , typename... ARGS >
     struct Functor_callStrategy : public CallStrategy<ARGS...>
     {
-      virtual void call(ARGS... args){
+      void call(ARGS... args) final {
         (*reinterpret_cast<std::function<void(ARGS...)>*>(this->object))(args...);
       }
     };

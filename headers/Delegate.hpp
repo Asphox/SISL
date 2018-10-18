@@ -37,14 +37,14 @@ namespace sisl
 
       Delegate(const Delegate&) = default;
 
-      Delegate(Delegate&&) = default;
+      Delegate(Delegate&&) noexcept = default;
 
-      Delegate( const std::function<RET(ARGS...)>& functor );
+      explicit Delegate( const std::function<RET(ARGS...)>& functor );
 
       template< typename OBJ >
       Delegate( OBJ* obj , RET(OBJ::*fp)(ARGS...));
 
-      Delegate( RET(*fp)(ARGS...) );
+      explicit Delegate( RET(*fp)(ARGS...) );
 
       template< typename... ARGS2 >
       void call(ARGS2... args);

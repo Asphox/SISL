@@ -13,11 +13,11 @@ namespace sisl
     template< typename RET , typename... ARGS >
     template< typename OBJ >
     void Delegate<RET,ARGS...>::init_with_member(OBJ* obj){
-      flags[0] = std::is_base_of<SislObject,OBJ>::value && reinterpret_cast<uintptr_t>(obj) != 0;
+      flags[0] = std::is_base_of<Object,OBJ>::value && reinterpret_cast<uintptr_t>(obj) != 0;
       flags[1] = false;
       flags[2] = true;
       if(isDanglingSafe())
-        checker = reinterpret_cast<SislObject*>(obj);
+        checker = reinterpret_cast<Object*>(obj);
       gs->object = reinterpret_cast<priv::IMPLCLASS*>(obj);
     }
 

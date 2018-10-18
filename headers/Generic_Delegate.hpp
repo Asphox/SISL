@@ -13,7 +13,7 @@
 #include <bitset>
 #include <mutex>
 
-#include "SislObject.hpp"
+#include "Object.hpp"
 #include "CallStrategies.hpp"
 #include "Utils.h"
 
@@ -34,7 +34,7 @@ namespace sisl
         [2]:isMember / !isStatic
      */
 
-      check_ptr<SislObject> checker;
+      check_ptr<Object> checker;
       std::mutex mtx;
 
     public:

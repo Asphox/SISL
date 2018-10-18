@@ -22,9 +22,9 @@ namespace sisl
   void Generic_Delegate::call(void* sender,ARGS... args){
     std::lock_guard<std::mutex> lck(mtx);
     if( isDanglingSafe() && !isDangling() ) {
-        reinterpret_cast<SislObject *>(getObject())->__sisl__sender = sender;
+        reinterpret_cast<Object *>(getObject())->__sisl__sender = sender;
         static_cast<Delegate<RET, ARGS...> *>(this)->call(args...);
-        reinterpret_cast<SislObject *>(getObject())->__sisl__sender = nullptr;
+        reinterpret_cast<Object *>(getObject())->__sisl__sender = nullptr;
     }
     else{
         static_cast<Delegate<RET, ARGS...> *>(this)->call(args...);

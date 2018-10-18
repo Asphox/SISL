@@ -35,7 +35,7 @@ namespace sisl
     public:
         check_ptr() = default;
         check_ptr(const check_ptr&) = default;
-        check_ptr(check_ptr&&) = default;
+        check_ptr(check_ptr&&) noexcept = default;
         explicit check_ptr(enable_check_from_this<T>& target ) : target_to_check(target.addr) {}
         explicit check_ptr(enable_check_from_this<T>* target ) : target_to_check(target->addr){}
         inline check_ptr<T>& operator=(enable_check_from_this<T>& target){ target_to_check = target.addr;  }
@@ -48,7 +48,7 @@ namespace sisl
             else
                 return nullptr;
         }
-        inline operator bool() const { return valid(); }
+        explicit inline operator bool() const { return valid(); }
         bool valid() const { return !target_to_check.expired(); }
 
 
