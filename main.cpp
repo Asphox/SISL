@@ -1,44 +1,38 @@
 #include <iostream>
-
+#define SISL_IMPLEMENTATION
 #include "sisl.hpp"
+class MyButton
+{
+public: // Signals must be public
+	sisl_signal(onClick, int); // Defines a signal named 'onClick' that carries
 
-class MyClass : public sisl::object<MyClass>
+	MyButton(std::string&& name) : name(std::move(name)) {}
+	std::string name; // Name of the button for identification
+};
+
+class MyWidget
 {
 public:
-
-	sisl_sig(on_clic, int);
-
-	void test_i(int a) {
-		std::cout << "sender !" << sisl::sender<MyClass>() << std::endl;
-	}
-
-	void test_d(double d) {
-		std::cout << "sender !" << d << std::endl;
-	}
-
-	void test_string(std::string s)
+	void onButtonClick(int value) // Slot method that will be called when the signal is emitted
 	{
-		std::cout << "sender !" << s << std::endl;
-	}
-
-	static void test_static(int a)
-	{
-
+		auto sender = sisl::sender<MyButton>(); // Get the sender of the signal
+		if (sender)
+		{
+			std::cout << "Button clicked with value: " << value << " from button: " << sender->name << std::endl;
+		}
 	}
 };
 
-void test(std::string a)
-{
-
-}
-
 int main()
 {
-	MyClass m;
-
-	m.on_clic.connect(m, &MyClass::test_i);
-	//m.on_clic.connect([](std::string a) {});
-	emit m.on_clic(2);
-	m.test_i(2);
+	MyButton button1("MyButton1");
+	MyButton button2("MyButton2");
+	MyWidget widget;
+	// Connect the signal to the slot
+	button1.onClick.connect(widget, &MyWidget::onButtonClick);
+	button2.onClick.connect(widget, &MyWidget::onButtonClick);
+	// Emit the signal with an integer value
+	emit button1.onClick(42); // This will call widget.onButtonClick(42) and print the sender's name
+	emit button2.onClick(42); // This will call widget.onButtonClick(42) and print the sender's name
 	return 0;
 }
