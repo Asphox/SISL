@@ -24,13 +24,13 @@ namespace SISL_NAMESPACE
 		class generic_object
 		{
 		public:
+			virtual ~generic_object() = default;
 			[[nodiscard]] virtual std::weak_ptr<generic_object> get_weak_ptr() = 0;
+			[[nodiscard]] virtual std::thread::id get_thread_id() = 0;
 		};
 
 		template<typename T>
 		concept SISL_OBJECT = std::is_base_of_v<generic_object, T>;
-
-		thread_local generic_object* gtl_current_sender = nullptr;
 
 		// traits for castable
 		template<typename TFROM, typename TTO, typename = void>
