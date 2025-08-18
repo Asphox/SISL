@@ -23,16 +23,24 @@ public:
 	}
 };
 
+void thread_loop()
+{
+	while (sisl::poll(sisl::blocking_polling) != sisl::polling_result::terminated)
+	{
+		std::cout << "loop !" << std::endl;
+	}
+}
+
+
 int main()
 {
+	std::thread t(thread_loop); // Start a thread that will poll for signals
 	MyButton button1("MyButton1");
-	MyButton button2("MyButton2");
 	MyWidget widget;
-	// Connect the signal to the slot
-	button1.onClick.connect(widget, &MyWidget::onButtonClick);
-	button2.onClick.connect(widget, &MyWidget::onButtonClick);
-	// Emit the signal with an integer value
-	emit button1.onClick(42); // This will call widget.onButtonClick(42) and print the sender's name
-	emit button2.onClick(42); // This will call widget.onButtonClick(42) and print the sender's name
+	button1.onClick.connect(widget, &MyWidget::onButtonClick, t.get_id(), sisl::type_connection::blocking_queued); // Connect the signal to the slot
+	button1.onClick(2);
+	button1.onClick(2);
+	sisl::terminate();
+	t.join();
 	return 0;
 }

@@ -99,6 +99,7 @@
 #include <vector>
 #include <functional>
 #include <thread>
+#include <shared_mutex>
 #include <future>
 #include <queue>
 #include <memory>
@@ -147,7 +148,7 @@ namespace SISL_NAMESPACE
 	* It is typically called when the application is shutting down to unlock all blocking polling or polling with long timeout.
 	* This operation is irreversible.
 	*/
-	void terminate_polling();
+	void terminate();
 
 	/**
 	* @class invalid_blocking_queued_connection
@@ -179,7 +180,8 @@ namespace SISL_NAMESPACE
 		automatic		= 0,			///< Automatically choose between direct and queued.
 		direct			= 1,			///< Call slot immediately in the emitter's thread (ignores thread affinity).
 		queued			= 2,			///< Enqueue slot to be invoked in the receiver's thread.
-		blocking_queued	= 3,			///< Enqueue and block until the slot has finished.
+		blocking_queued = 3,			///< Enqueue and block until the slot has finished, will throw an exception if the current thread is the same as the receiver's thread. 
+										//		<!> Can cause deadlocks with circular dependencies. <!>
 		unique			= 1<<6,			///< Prevent multiple connections to the same slot.
 		single_shot		= 1<<7,			///< Automatically disconnect after first trigger.
 	};
@@ -388,6 +390,29 @@ namespace SISL_NAMESPACE
 		template<typename T>
 		signal(T& owner) : m_owner(&owner)
 		{}
+	
+		/**
+		* @brief The copy of a signal does not copy the slots.
+		*/
+		signal(const signal& other)
+			// The owner is calculated based on the offset of the other signal inside its owner object.
+			: m_owner(reinterpret_cast<void*>(reinterpret_cast<std::intptr_t>(this) - (reinterpret_cast<std::intptr_t>(&other) - reinterpret_cast<std::intptr_t>(other.m_owner))))
+		{}
+
+		/**
+		* @brief Move constructor for the signal.
+		*/
+		signal(signal&& other) noexcept
+			// The owner is calculated based on the offset of the other signal inside its owner object.
+			: m_owner(reinterpret_cast<void*>(reinterpret_cast<std::intptr_t>(this) - (reinterpret_cast<std::intptr_t>(&other) - reinterpret_cast<std::intptr_t>(other.m_owner)))), m_slots(std::move(other.m_slots))
+		{
+			other.m_owner = nullptr; // Clear the moved-from signal's owner
+		}
+
+		/**
+		* @brief No affectation constructor.
+		*/
+		signal& operator=(const signal&) = delete;
 
 		/**
 		* @brief Connects a member function to this signal.
@@ -502,11 +527,11 @@ namespace SISL_NAMESPACE
 	void signal<TARGS...>::connect(TINSTANCE& instance, TMETHOD method, std::thread::id thread_affinity, type_connection type)
 	{
 		const priv::delegate_info info = { reinterpret_cast<intptr_t>(&instance), typeid(method).hash_code(), thread_affinity, type };
-		if (type & type_connection::single_shot)
+		if (type & type_connection::unique)
 		{
-			auto it = std::find_if(m_slots.begin(), m_slots.end(), [&info](const priv::slot<TARGS...>& slot)
+			const auto it = std::find_if(m_slots.begin(), m_slots.end(), [&info](const priv::slot<TARGS...>& slot)
 			{
-					return slot.get_info().object == info.object && slot.get_info().function == info.function;
+				return slot.get_info().object == info.object && slot.get_info().function == info.function;
 			});
 			if (it != m_slots.end())
 			{
@@ -542,42 +567,23 @@ namespace SISL_NAMESPACE
 					}
 				};
 				m_slots.emplace_back(std::move(callee));
-			}
-			// otherwise we just call the method, no check
-			else
-			{
-				auto callee = [&instance, method, info](priv::delegate_operation operation, std::optional<std::tuple<TARGS...>> args)->priv::delegate_return
-				{
-					if (operation == priv::delegate_operation::get_info)
-					{
-						return std::reference_wrapper<const priv::delegate_info>(info);
-					}
-					std::apply([&instance, method](TARGS... args)
-					{
-						(instance.*method)(args...);
-					}, *args);
-					return { true }; // Indicates successful call
-				};
-				m_slots.emplace_back(std::move(callee));
+				return;
 			}
 		}
 		// otherwise we just call the method, no check
-		else
+		auto callee = [&instance, method, info](priv::delegate_operation operation, std::optional<std::tuple<TARGS...>> args)->priv::delegate_return
 		{
-			auto callee = [&instance, method, info](priv::delegate_operation operation, std::optional<std::tuple<TARGS...>> args)->priv::delegate_return
+			if (operation == priv::delegate_operation::get_info)
 			{
-				if (operation == priv::delegate_operation::get_info)
-				{
-					return std::reference_wrapper<const priv::delegate_info>(info);
-				}
-				std::apply([&instance, method](TARGS... args)
-				{
-					(instance.*method)(args...);
-				}, *args);
-				return { true }; // Indicates successful call
-			};
-			m_slots.emplace_back(std::move(callee));
-		}
+				return std::reference_wrapper<const priv::delegate_info>(info);
+			}
+			std::apply([&instance, method](TARGS... args)
+			{
+				(instance.*method)(args...);
+			}, *args);
+			return { true }; // Indicates successful call
+		};
+		m_slots.emplace_back(std::move(callee));
 	}
 
 	template<typename... TARGS>
@@ -586,9 +592,9 @@ namespace SISL_NAMESPACE
 	void signal<TARGS...>::connect(TFUNCTOR&& functor, std::thread::id thread_affinity, type_connection type)
 	{
 		const priv::delegate_info info = { reinterpret_cast<intptr_t>(&functor), 0, thread_affinity, type };
-		if (type & type_connection::single_shot)
+		if (type & type_connection::unique)
 		{
-			auto it = std::find_if(m_slots.begin(), m_slots.end(), [&info](const priv::slot<TARGS...>& slot)
+			const auto it = std::find_if(m_slots.begin(), m_slots.end(), [&info](const priv::slot<TARGS...>& slot)
 			{
 				return slot.get_info().object == info.object && slot.get_info().function == 0;
 			});
@@ -619,9 +625,9 @@ namespace SISL_NAMESPACE
 	void signal<TARGS...>::connect(TFUNCTION&& function, std::thread::id thread_affinity, type_connection type)
 	{
 		const priv::delegate_info info = { reinterpret_cast<intptr_t>(&function), 0, thread_affinity, type };
-		if (type & type_connection::single_shot)
+		if (type & type_connection::unique)
 		{
-			auto it = std::find_if(m_slots.begin(), m_slots.end(), [&info](const priv::slot<TARGS...>& slot)
+			const auto it = std::find_if(m_slots.begin(), m_slots.end(), [&info](const priv::slot<TARGS...>& slot)
 			{
 				return slot.get_info().object == info.object && slot.get_info().function == 0;
 			});
@@ -712,8 +718,9 @@ namespace SISL_NAMESPACE
 					}
 					std::promise<void> done;
 					auto future_done = done.get_future();
-					priv::enqueue([slot, &done, ...args_capture = std::forward<TARGS>(args)]() mutable
+					priv::enqueue([sender = m_owner, slot, &done, ...args_capture = std::forward<TARGS>(args)]() mutable
 					{
+						priv::gtl_current_sender = sender;
 						try
 						{
 							slot(std::move(args_capture)...);
@@ -723,14 +730,17 @@ namespace SISL_NAMESPACE
 						{
 							done.set_exception(std::current_exception());
 						}
+						priv::gtl_current_sender = nullptr;
 					}, target_thread);
 					future_done.wait();
 				}
 				// If the slot is queued, we just enqueue it
 				{
-					priv::enqueue([slot, ...args_capture = std::forward<TARGS>(args)]() mutable
+					priv::enqueue([sender = m_owner, slot, ...args_capture = std::forward<TARGS>(args)]() mutable
 					{
+						priv::gtl_current_sender = sender;
 						slot(std::move(args_capture)...);
+						priv::gtl_current_sender = nullptr;
 					}, target_thread);
 				}
 			}
@@ -746,6 +756,92 @@ namespace SISL_NAMESPACE
 				++it;
 		}
 		priv::gtl_current_sender = nullptr;
+	}
+
+	namespace priv
+	{
+		// MPSC (Multiple Producer Single Consumer) Lock-Free Queue
+		// Only ONE consumer thread is allowed to pop elements from the queue
+		template<typename T>
+		class MPSC_lock_free_queue
+		{
+		private:
+			struct alignas(std::hardware_constructive_interference_size) Node
+			{
+				T data;
+				std::atomic<Node*> next;
+				Node(T value) : data(value), next(nullptr) {}
+			};
+			std::atomic<Node*> m_head;
+			std::atomic<Node*> m_tail;
+
+		public:
+			MPSC_lock_free_queue()
+			{
+				Node* dummy = new Node(T{});
+				m_head.store(dummy, std::memory_order_relaxed);
+				m_tail.store(dummy, std::memory_order_relaxed);
+			}
+			~MPSC_lock_free_queue()
+			{
+				Node* current_node = m_head.load(std::memory_order_relaxed);
+				while (current_node)
+				{
+					Node* next_node = current_node->next.load(std::memory_order_relaxed);
+					delete current_node;
+					current_node = next_node;
+				}
+			}
+			void push(T value)
+			{
+				Node* new_node = new Node(std::move(value));
+				while (true)
+				{
+					Node* old_tail = m_tail.load(std::memory_order_acquire);
+					Node* next_node = old_tail->next.load(std::memory_order_acquire);
+
+					if (next_node == nullptr)
+					{
+						if (old_tail->next.compare_exchange_weak(next_node, new_node, std::memory_order_release))
+						{
+							m_tail.compare_exchange_strong(old_tail, new_node, std::memory_order_release);
+							return;
+						}
+					}
+					else
+					{
+						m_tail.compare_exchange_strong(old_tail, next_node, std::memory_order_release, std::memory_order_relaxed);
+					}
+				}
+			}
+
+			bool pop(T& value)
+			{
+				while (true)
+				{
+					Node* old_head = m_head.load(std::memory_order_acquire);
+					Node* next_node = old_head->next.load(std::memory_order_acquire);
+					if (next_node == nullptr)
+					{
+						return false;
+					}
+					if (m_head.compare_exchange_strong(old_head, next_node, std::memory_order_release))
+					{
+						value = std::move(next_node->data);
+						delete old_head;
+						return true;
+					}
+					return false;
+				}
+			}
+
+			bool empty() const
+			{
+				Node* head = m_head.load(std::memory_order_relaxed);
+				Node* next_node = head->next.load(std::memory_order_relaxed);
+				return next_node == nullptr;
+			}
+		};
 	}
 }
 // <=====================================================================================>
@@ -765,13 +861,16 @@ namespace SISL_NAMESPACE
 		thread_local void* gtl_current_sender = nullptr;
 
 		// A thread-safe queue for signals.
-		// OPTIMIZATION: lock free queue ?
-		struct signal_queue
+		struct async_delegates
 		{
-			std::queue<std::function<void()>> m_queue;
+			priv::MPSC_lock_free_queue<std::function<void()>> m_queue;
 			std::condition_variable m_cv;
-			std::mutex m_mutex;
 		};
+
+		// The thread-local async_delegates instance (signal queue) for each thread.
+		// Can be accessed via hashmap_signal_queue::instance().get_thread_queue(thread_id) from any thread.
+		// And directly via the current thread (and so skips the read lock of the hashmap_signal_queue).
+		thread_local async_delegates* gtl_async_delegates = nullptr;
 
 		// A thread-safe map of signal queues, indexed by thread ID.
 		// Singleton pattern to ensure only one instance exists.
@@ -783,16 +882,23 @@ namespace SISL_NAMESPACE
 				return instance;
 			}
 
-			signal_queue& get_thread_queue(std::thread::id thread_id)
+			async_delegates& get_thread_queue(std::thread::id thread_id)
 			{
-				std::lock_guard<std::mutex> lock(m_mutex);
-				auto it = m_queues.find(thread_id);
-				if (it == m_queues.end())
+				std::shared_lock<std::shared_mutex> read_lock(m_mutex);
+				auto it = m_async_delegates.find(thread_id);
+				if (it != m_async_delegates.end())
 				{
-					auto [new_it, _] = m_queues.emplace(thread_id, std::make_unique<signal_queue>());
-					return *new_it->second;
+					return *it->second;
 				}
-				return *it->second;
+				read_lock.unlock();
+				std::unique_lock<std::shared_mutex> write_lock(m_mutex);
+				it = m_async_delegates.find(thread_id);
+				if (it != m_async_delegates.end())
+				{
+					return *it->second;
+				}
+				auto [new_it, _] = m_async_delegates.emplace(thread_id, std::make_unique<async_delegates>());
+				return *new_it->second;
 			}
 
 			const std::atomic_bool& terminated() const noexcept
@@ -805,55 +911,59 @@ namespace SISL_NAMESPACE
 				m_terminated = true;
 			}
 
-			std::unordered_map<std::thread::id, std::unique_ptr<signal_queue>> m_queues;
-			std::mutex m_mutex;
+			std::unordered_map<std::thread::id, std::unique_ptr<async_delegates>> m_async_delegates;
+			std::shared_mutex m_mutex;
 			std::atomic_bool m_terminated{ false }; ///< Flag to indicate if the SISL mechanism is terminated.
 		};
 
 		void enqueue(std::function<void()>&& delegate, std::thread::id thread_id)
 		{
-			auto& queue = hashmap_signal_queue::instance().get_thread_queue(thread_id);
+			auto& delegates = hashmap_signal_queue::instance().get_thread_queue(thread_id);
 			{
-				std::lock_guard<std::mutex> lock(queue.m_mutex);
-				queue.m_queue.push(std::move(delegate));
+				delegates.m_queue.push(std::move(delegate));
 			}
-			queue.m_cv.notify_one();
+			delegates.m_cv.notify_one();
 		}
 	}
 
 	polling_result poll(std::chrono::milliseconds timeout)
 	{
-		auto& queue = priv::hashmap_signal_queue::instance().get_thread_queue(std::this_thread::get_id());
+		if(priv::gtl_async_delegates == nullptr)
+		{
+			// If the thread-local async_delegates is not initialized, we initialize it.
+			priv::gtl_async_delegates = &priv::hashmap_signal_queue::instance().get_thread_queue(std::this_thread::get_id());
+		}
+		auto& cv = priv::gtl_async_delegates->m_cv;
+		auto& queue = priv::gtl_async_delegates->m_queue;
 		const auto& terminated = priv::hashmap_signal_queue::instance().terminated();
 		if(terminated)
 		{
 			return polling_result::terminated; // If SISL is terminated, we return immediately.
 		}
-		std::unique_lock<std::mutex> lock(queue.m_mutex);
+		std::mutex mtx;
+		std::unique_lock<std::mutex> lock(mtx);
 		if (timeout == blocking_polling)
 		{
-			queue.m_cv.wait(lock, [&queue, &terminated] { return !queue.m_queue.empty() || terminated; });
+			cv.wait(lock, [&queue, &terminated] { return !queue.empty() || terminated; });
 		}
 		else if (timeout.count() > 0)
 		{
-			queue.m_cv.wait_for(lock, timeout, [&queue, &terminated] { return !queue.m_queue.empty() || terminated; });
+			cv.wait_for(lock, timeout, [&queue, &terminated] { return !queue.empty() || terminated; });
 		}
-		if(queue.m_queue.empty())
+		if(queue.empty())
 		{
 			return terminated ? polling_result::terminated : polling_result::timeout;
 		}
-		while (!queue.m_queue.empty())
+		while (!queue.empty())
 		{
-			auto delegate = std::move(queue.m_queue.front());
-			queue.m_queue.pop();
-			lock.unlock();
-			delegate();
-			lock.lock();
+			std::function<void()> delegate;
+			if (queue.pop(delegate))
+				delegate();
 		}
 		return terminated ? polling_result::terminated : polling_result::slots_invoked;
 	}
 
-	void terminate_polling()
+	void terminate()
 	{
 		priv::hashmap_signal_queue::instance().terminates();
 	}
