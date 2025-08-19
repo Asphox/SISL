@@ -269,5 +269,5 @@ See doxygen comments in the source code.
 
 ### Disclaimer
 This library is currently in development and may change in future versions.
-Some optimizations will be added in the future, such as a lock-free queue for queued connections and more efficient memory management.
+Some optimizations will be added in the future, such as a more efficient memory management.
 Please report any issues or suggestions on the GitHub repository.
