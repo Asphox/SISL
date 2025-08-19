@@ -200,7 +200,7 @@ int main()
 	// Emit the signal with an integer value
 	emit button.onClick(42); // This will call managed_widget.onButtonClick(42) in the appropriate thread based on connection policy
 
-	sisl::terminate_polling(); // Stop polling in all threads
+	sisl::terminate(); // Stop polling in all threads
 	worker.join(); // Wait for the worker thread to finish
 	return 0;
 }
@@ -254,7 +254,7 @@ If `timeout` is provided, it specifies the maximum time to wait for signals. If 
 Typically called in a thread's main loop.
 Returns `sisl::polling_result` indicating whether any slots were invoked, if the operation timed out, or if polling was terminated.
 
-### Function `sisl::terminate_polling()`
+### Function `sisl::terminate()`
 Terminates the SISL polling mechanism, stopping all threads that are currently polling for signals.
 This is useful for gracefully shutting down the SISL system when it is no longer needed.
 
