@@ -54,7 +54,7 @@ int main()
 	MyButton button;
 	MyWidget widget;
 	// Connect the signal to the slot
-	button.onClick.connect(widget, &MyWidget::onButtonClick);
+	sisl::connect(button, &MyButton::onClick, widget, &MyWidget::onButtonClick);
 	// Emit the signal with an integer value
 	emit button.onClick(42); // This will call widget.onButtonClick(42)
 	return 0;
@@ -95,8 +95,8 @@ int main()
 	MyButton button2("MyButton2");
 	MyWidget widget;
 	// Connect the signal to the slot
-	button1.onClick.connect(widget, &MyWidget::onButtonClick);
-	button2.onClick.connect(widget, &MyWidget::onButtonClick);
+	sisl::connect(button1, &MyButton::onClick, widget, &MyWidget::onButtonClick);
+	sisl::connect(button2, &MyButton::onClick, widget, &MyWidget::onButtonClick);
 	// Emit the signal with an integer value
 	emit button1.onClick(42); // This will call widget.onButtonClick(42) and print the sender's name
 	emit button2.onClick(42); // This will call widget.onButtonClick(42) and print the sender's name
@@ -135,8 +135,8 @@ int main()
 		auto managed_widget = std::make_shared<MyWidget>(); // This widget is managed by shared_ptr, so it will automatically disconnect when destroyed.
 		MyWidget unmanaged_widget; // This widget is not managed by shared_ptr, so it will not disconnect automatically, and cause dangling pointer issues.
 		// Connect the signal to the slot
-		button.onClick.connect(managed_widget, &MyWidget::onButtonClick);
-		button.onClick.connect(unmanaged_widget, &MyWidget::onButtonClick); // This will cause dangling pointer issues if 'unmanaged_widget' is destroyed before 'button'.
+		sisl::connect(button, &MyButton::onClick, *managed_widget.get(), &MyWidget::onButtonClick);
+		sisl::connect(button, &MyButton::onClick, unmanaged_widget, &MyWidget::onButtonClick);
 	} // managed_widget and unmanaged_widget go out of scope here, managed_widget will be destroyed and disconnected, but unmanaged_widget will not.
 	
 	// This will call the dangling unmanaged_widget.onButtonClick(42) (and hopefully crash !), but not unmanaged_widget.onButtonClick(42) since it was destroyed !
@@ -194,9 +194,9 @@ int main()
 	std::thread worker(thread_loop); // Start a thread to process signals
 	const auto thread_id = worker.get_id(); // Get the thread ID of the worker thread
 	// Connect the signal to the slot with different connection policies
-	button.onClick.connect(*managed_widget.get(), &MyWidget::onButtonClick, thread_id, sisl::type_connection::direct); // Direct connection (thread_id is ignored, called immediately in the emitter's thread)
-	button.onClick.connect(*managed_widget.get(), &MyWidget::onButtonClick, thread_id, sisl::type_connection::queued); // Queued connection
-	button.onClick.connect(*managed_widget.get(), &MyWidget::onButtonClick, thread_id, sisl::type_connection::blocking_queued); // Blocking queued connection
+	sisl::connect(button, &MyButton::onClick, *managed_widget.get(), &MyWidget::onButtonClick, thread_id, sisl::type_connection::direct); // Direct connection (thread_id is ignored, called immediately in the emitter's thread)
+	sisl::connect(button, &MyButton::onClick, *managed_widget.get(), &MyWidget::onButtonClick, thread_id, sisl::type_connection::queued); // Queued connection
+	sisl::connect(button, &MyButton::onClick, *managed_widget.get(), &MyWidget::onButtonClick, thread_id, sisl::type_connection::blocking_queued); // Blocking queued connection
 	// Emit the signal with an integer value
 	emit button.onClick(42); // This will call managed_widget.onButtonClick(42) in the appropriate thread based on connection policy
 
