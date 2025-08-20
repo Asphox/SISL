@@ -206,6 +206,45 @@ int main()
 	return 0;
 }
 ```
+Here’s an English translation of your README section:
+
+---
+
+## Advanced Threading Settings
+
+By default, SISL uses a lock-free Multiple Producer Single Consumer (MPSC) queue implemented via a linked list to store inter-thread signal emissions.
+Although this implementation is efficient and allows an 'unlimited' number of pending signals per thread, it can cause slowdowns in highly multithreaded environments due to frequent calls to the dynamic allocator.
+
+If your application requires very high performance for inter-thread communication, SISL can be configured to use a different storage method for inter-thread signal emissions.
+This method relies on a lock-free MPSC queue implemented via a **static ring buffer**.
+The trade-off is that the number of pending signals per thread becomes **bounded**, and emitting a signal to a thread whose queue is full will throw an exception.
+
+---
+
+To enable the ring buffer, define (or uncomment) in `sisl.hpp`:
+
+```cpp
+#define SISL_USE_LOCK_FREE_RING_QUEUE
+```
+
+And, if needed, specify the ring size (default is 256):
+
+```cpp
+#define SISL_MAX_SLOTS_LOCK_FREE_RING_QUEUE XXXXX
+```
+
+---
+
+### Summary
+
+|                                 | Without Ring-Buffer (default) | With Ring-Buffer (SISL\_USE\_LOCK\_FREE\_RING\_QUEUE) |
+| ------------------------------- | ----------------------------- | ----------------------------------------------------- |
+| Performance                     | High                          | Very high                                             |
+| # of pending signals per thread | Unlimited                     | Limited                                               |
+
+
+
+
 ## SISL API Documentation
 
 ### Class `sisl::signal<TARGS...>`
