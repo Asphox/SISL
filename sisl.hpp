@@ -368,38 +368,88 @@ namespace SISL_NAMESPACE
 			type_connection	type;
 		};
 
-		enum class delegate_operation
+		// We can't rely on std::function for delegate storage because perfect forwarding is not possible with it (and so causes undesired copies)
+		// So we build our own
+		template<typename TSIGNATURE, std::size_t STORAGE_SIZE = 64>
+		class delegate_impl;
+
+		template<typename TRETURN, typename... TARGS, std::size_t STORAGE_SIZE>
+		class delegate_impl<TRETURN(TARGS...), STORAGE_SIZE>
 		{
-			call,			///< Call the delegate with the provided arguments.
-			get_info,		///< Retrieve the delegate's information.
+		private:
+			alignas(std::max_align_t) std::array<std::byte, STORAGE_SIZE> m_storage{};
+			TRETURN(*m_invoker)(void* p_this, TARGS&&...) = nullptr;
+			void(*m_deleter)(void* p_this) = nullptr;
+
+			template<typename TCALLABLE, typename... UARGS>
+			static TRETURN invoker(void* p_this, UARGS&&... args)
+			{
+				return (*reinterpret_cast<TCALLABLE*>(p_this))(std::forward<UARGS>(args)...);
+			}
+
+			template<typename TCALLABLE>
+			static void deleter(void* p_this)
+			{
+				reinterpret_cast<TCALLABLE*>(p_this)->~TCALLABLE();
+			}
+
+		public:
+
+			delegate_impl() noexcept = default;
+
+			template<typename TCALLABLE, typename = std::enable_if_t<!std::is_same_v<std::decay_t<TCALLABLE>, delegate_impl>>>
+			delegate_impl(TCALLABLE&& callable)
+			{
+				new (m_storage.data()) TCALLABLE(std::forward<TCALLABLE>(callable));
+				m_invoker = &delegate_impl::invoker<TCALLABLE, TARGS...>;
+				m_deleter = &delegate_impl::deleter<TCALLABLE>;
+			}
+
+			~delegate_impl()
+			{
+				m_deleter(m_storage.data());
+			}
+
+			TRETURN operator()(TARGS... args) const
+			{
+				return m_invoker(const_cast<void*>(reinterpret_cast<const void*>(m_storage.data())), std::forward<TARGS>(args)...);
+			}
 		};
 
-		using delegate_return = std::variant<bool, std::reference_wrapper<const delegate_info>>;
-
 		template<typename... TARGS>
-		using delegate = std::function<delegate_return(delegate_operation, std::optional<std::tuple<TARGS...>>)>;
+		using delegate = delegate_impl<bool(TARGS&&...)>;
 
 		template<typename... TARGS>
 		class slot
 		{
 		public:
-			slot(delegate<TARGS...>&& callee)
+			slot(delegate<TARGS...>&& callee, const delegate_info& info)
 			{
 				m_callee = std::move(callee);
+				m_info = info;
 			}
 
 			const delegate_info& get_info() const
 			{
-				return std::get<std::reference_wrapper<const delegate_info>>(m_callee(delegate_operation::get_info, std::nullopt)).get();
+				return m_info;
 			}
 
-			inline bool operator()(TARGS&&... args) const
+			template<typename... UARGS>
+			inline bool operator()(UARGS&&... args)
 			{
-				return std::get<bool>(m_callee(delegate_operation::call, std::make_tuple(std::forward<TARGS>(args)...)));
+				return call_impl(std::forward<UARGS>(args)...);
 			}
 
 		private:
+			// Perfect forwarding for any type of arguments (lvalue, rvalue, const, non-const)
+			template<typename... UARGS>
+			inline bool call_impl(UARGS&&... args)
+			{
+				return m_callee(static_cast<TARGS&&>(args)...);
+			}
+
 			delegate<TARGS...> m_callee;
+			delegate_info m_info;
 		};
 
 		// Function to enqueue a delegate for execution in a specific thread
@@ -554,9 +604,13 @@ namespace SISL_NAMESPACE
 		 *
 		 * @param args Arguments to pass to the connected slots.
 		 */
-		void operator()(TARGS&&... args);
+		template<typename... UARGS>
+		void operator()(UARGS&&... args);
 
 		private:
+		
+		template<typename... UARGS>
+		void emit_impl(UARGS&&... args);
 
 		template<typename TINSTANCE, typename TMETHOD>
 		requires priv::COMPATIBLE_METHOD_OF<TMETHOD, TINSTANCE, TARGS...>
@@ -690,43 +744,29 @@ namespace SISL_NAMESPACE
 			auto weak_instance = instance.weak_from_this();
 			if (!weak_instance.expired())
 			{
-				auto callee = [weak_instance, method, info](priv::delegate_operation operation, std::optional<std::tuple<TARGS...>> args) -> priv::delegate_return
+				auto callee = [weak_instance, method](auto&&... args) -> bool
 				{
-					if (operation == priv::delegate_operation::get_info)
-					{
-						return std::reference_wrapper<const priv::delegate_info>(info);
-					}
 					if (auto shared_instance = weak_instance.lock())
 					{
-						std::apply([&shared_instance, method](TARGS... args)
-						{
-							(static_cast<TINSTANCE*>(shared_instance.get())->*method)(args...);
-						}, *args);
-						return { true }; // Indicates successful call
+						(static_cast<TINSTANCE*>(shared_instance.get())->*method)(std::forward<TARGS>(args)...);
+						return true; // Indicates successful call
 					}
 					else
 					{
-						return { false }; // Instance is no longer valid
+						return false; // Instance is no longer valid
 					}
 				};
-				m_slots.emplace_back(std::move(callee));
+				m_slots.emplace_back(std::move(callee), info);
 				return;
 			}
 		}
 		// otherwise we just call the method, no check
-		auto callee = [&instance, method, info](priv::delegate_operation operation, std::optional<std::tuple<TARGS...>> args)->priv::delegate_return
+		auto callee = [&instance, method](auto&&... args) -> bool
 		{
-			if (operation == priv::delegate_operation::get_info)
-			{
-				return std::reference_wrapper<const priv::delegate_info>(info);
-			}
-			std::apply([&instance, method](TARGS... args)
-			{
-				(instance.*method)(args...);
-			}, *args);
-			return { true }; // Indicates successful call
+			(instance.*method)(std::forward<TARGS>(args)...);
+			return true; // Indicates successful call
 		};
-		m_slots.emplace_back(std::move(callee));
+		m_slots.emplace_back(std::move(callee), info);
 	}
 
 	template<typename... TARGS>
@@ -747,19 +787,12 @@ namespace SISL_NAMESPACE
 				return;
 			}
 		}
-		auto callee = [functor, info](priv::delegate_operation operation, std::optional<std::tuple<TARGS...>> args)->priv::delegate_return
+		auto callee = [functor](auto&&... args)->bool
 		{
-			if (operation == priv::delegate_operation::get_info)
-			{
-				return std::reference_wrapper<const priv::delegate_info>(info);
-			}
-			std::apply([&functor](TARGS... args)
-			{
-				functor(args...);
-			}, *args);
-			return { true }; // Indicates successful calls
+			functor(std::forward<TARGS>(args)...);
+			return true; // Indicates successful calls
 		};
-		m_slots.emplace_back(std::move(callee));
+		m_slots.emplace_back(std::move(callee), info);
 	}
 
 	template<typename... TARGS>
@@ -780,19 +813,12 @@ namespace SISL_NAMESPACE
 				return;
 			}
 		}
-		auto callee = [function, info](priv::delegate_operation operation, std::optional<std::tuple<TARGS...>> args)->priv::delegate_return
+		auto callee = [function](auto&&... args)->bool
 		{
-			if (operation == priv::delegate_operation::get_info)
-			{
-				return std::reference_wrapper<const priv::delegate_info>(info);
-			}
-			std::apply([&function](TARGS... args)
-			{
-				function(args...);
-			}, *args);
-			return { true }; // Indicates successful call
+			function(std::forward<TARGS>(args)...);
+			return true; // Indicates successful call
 		};
-		m_slots.emplace_back(std::move(callee));
+		m_slots.emplace_back(std::move(callee), info);
 	}
 	
 	template<typename... TARGS>
@@ -832,12 +858,20 @@ namespace SISL_NAMESPACE
 	}
 
 	template<typename... TARGS>
-	void signal<TARGS...>::operator()(TARGS&&... args)
+	template<typename... UARGS>
+	void signal<TARGS...>::operator()(UARGS&&... args)
+	{
+		emit_impl(std::forward<UARGS>(args)...);
+	}
+
+	template<typename... TARGS>
+	template<typename... UARGS>
+	void signal<TARGS...>::emit_impl(UARGS&&... args)
 	{
 		const std::thread::id current_thread = std::this_thread::get_id();
 		for (auto it = m_slots.begin(); it != m_slots.end(); )
 		{
-			const auto& slot = *it;
+			auto& slot = *it;
 			const priv::delegate_info& info = slot.get_info();
 			const type_connection type_without_flags = get_type_connection_without_flags(info.type);
 			// Checks if the slot should be executed directly or queued
@@ -860,9 +894,9 @@ namespace SISL_NAMESPACE
 					}
 					std::promise<void> done;
 					auto future_done = done.get_future();
-					priv::enqueue([sender = info.owner, slot, &done, ...args_capture = std::forward<TARGS>(args)]() mutable
+					priv::enqueue([slot, &done, ...args_capture = std::decay_t<TARGS>(args)]() mutable
 					{
-						priv::gtl_current_sender = sender;
+						priv::gtl_current_sender = slot.get_info().owner;
 						try
 						{
 							slot(std::move(args_capture)...);
@@ -879,10 +913,10 @@ namespace SISL_NAMESPACE
 				// If the slot is queued, we just enqueue it
 				else
 				{
-					priv::enqueue([sender = info.owner, slot, ...args_capture = std::forward<TARGS>(args)]() mutable
+					priv::enqueue([slot, ...args_capture = std::decay_t<TARGS>(args)]() mutable
 					{
-						priv::gtl_current_sender = sender;
-						slot(std::move(args_capture)...);
+						priv::gtl_current_sender = slot.get_info().owner;
+						slot(args_capture...);
 						priv::gtl_current_sender = nullptr;
 					}, target_thread);
 				}
@@ -891,7 +925,7 @@ namespace SISL_NAMESPACE
 			else
 			{
 				priv::gtl_current_sender = info.owner;
-				result = slot(std::forward<TARGS>(args)...);
+				result = slot(args...);
 				priv::gtl_current_sender = nullptr;
 			}
 			// If the slot is single-shot, remove it after calling

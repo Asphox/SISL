@@ -206,9 +206,6 @@ int main()
 	return 0;
 }
 ```
-Here’s an English translation of your README section:
-
----
 
 ## Advanced Threading Settings
 
