@@ -1,5 +1,7 @@
 #include <iostream>
 #define SISL_IMPLEMENTATION
+//#define SISL_USE_LOCK_FREE_RING_QUEUE
+//#define SISL_MAX_SLOTS_LOCK_FREE_RING_QUEUE 1024
 #include "sisl.hpp"
 class MyButton
 {
@@ -10,6 +12,8 @@ public: // Signals must be public
 	std::string name; // Name of the button for identification
 };
 
+static int v = 0;
+
 class MyWidget
 {
 public:
@@ -18,7 +22,7 @@ public:
 		auto sender = sisl::sender<MyButton>(); // Get the sender of the signal
 		if (sender)
 		{
-			std::cout << "Button clicked with value: " << value << " from button: " << sender->name << std::endl;
+			std::cout << "Button clicked with value: " << value << " from button: " << sender->name << "   " << v++ << std::endl;
 		}
 	}
 };
@@ -31,15 +35,24 @@ void thread_loop()
 	}
 }
 
+void test(int a)
+{
+	std::cout << "test " << a << std::endl;
+}
 
 int main()
 {
 	std::thread t(thread_loop); // Start a thread that will poll for signals
 	MyButton button1("MyButton1");
 	MyWidget widget;
-	button1.onClick.connect(widget, &MyWidget::onButtonClick, t.get_id(), sisl::type_connection::blocking_queued); // Connect the signal to the slot
-	button1.onClick(2);
-	button1.onClick(2);
+	for(int i = 0; i < 10000; ++i)
+	{
+		sisl::connect(button1, &MyButton::onClick, widget, &MyWidget::onButtonClick);
+		sisl::connect(button1, &MyButton::onClick, [](int a) { std::cout << "pouet " << a << std::endl; }); // <== erreur !
+		sisl::connect(button1, &MyButton::onClick, &test);
+	}
+	emit button1.onClick(2);
+	std::this_thread::sleep_for(std::chrono::seconds(1)); // Give some time for the thread to process signals
 	sisl::terminate();
 	t.join();
 	return 0;

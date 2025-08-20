@@ -2,16 +2,11 @@
  * @file    sisl.hpp
  * @brief	
  *
- * @details Description plus détaillée si nécessaire, incluant :
- *          - le rôle général du fichier
- *          - les classes/fonctions principales définies ici
- *          - tout comportement ou usage particulier
  *
  * @author  SOTON "Asphox" Dylan
  * @date    2025-08-18
  * @version 1.0
  *
- * @note    Notes importantes (ex: dépendances, compatibilité, warnings)
  *
  * @copyright
  * MIT License
@@ -88,6 +83,30 @@
  */
 #define sisl_signal __SISL_SIG_DEFINE
 
+/**
+ * #def SISL_USE_LOCK_FREE_RING_QUEUE
+ * @brief Enables the use of a lock-free ring queue for SISL's internal signal processing.
+ * 
+ * This macro, when defined, allows SISL to utilize a lock-free ring queue for managing queued signal emissions and slot invocations.
+ * This can improve performance in scenarios with high-frequency signal emissions and multiple threads.
+ * But it requires that the SISL_MAX_SLOTS_LOCK_FREE_RING_QUEUE is defined to specify the maximum number of slots in the ring queue.
+ * If the maximum number of slots is exceeded in the ring, the signal will not be emitted and will throw an exception.
+ * If this macro is not defined, SISL will use a standard dynamic queue.
+*/
+// #define SISL_USE_LOCK_FREE_RING_QUEUE
+
+#if defined(SISL_USE_LOCK_FREE_RING_QUEUE) && !defined(SISL_MAX_SLOTS_LOCK_FREE_RING_QUEUE)
+/**
+ * @def SISL_MAX_SLOTS_LOCK_FREE_RING_QUEUE
+ * @brief Specifies the maximum number of slots in the lock-free ring queue.
+ *
+ * This macro defines the size of the lock-free ring queue used by SISL for managing queued signal emissions.
+ * It must be defined when SISL_USE_LOCK_FREE_RING_QUEUE is enabled.
+ * The default value is 256, but it can be adjusted based on application needs.
+ */
+#define SISL_MAX_SLOTS_LOCK_FREE_RING_QUEUE 256
+#endif // SISL_USE_LOCK_FREE_RING_QUEUE && !SISL_MAX_SLOTS_LOCK_FREE_RING_QUEUE
+
 // <=====================================================================================>
 // <=====================================================================================>
 // <=====================================================================================>
@@ -101,7 +120,7 @@
 #include <thread>
 #include <shared_mutex>
 #include <future>
-#include <queue>
+#include <array>
 #include <memory>
 #include <variant>
 
@@ -165,7 +184,24 @@ namespace SISL_NAMESPACE
 		}
 	};
 
-	#define __SISL_SIG_DEFINE(name, ...) SISL_NAMESPACE##::signal<__VA_ARGS__> name{*this};
+	/**
+	 * @class queue_full
+	 * @brief Exception thrown when the lock-free ring queue is full.
+	 *
+	 * This exception is used to indicate that the lock-free ring queue has reached its maximum capacity
+	 * and cannot accept any more signals. It suggests increasing the SISL_MAX_SLOTS_LOCK_FREE_RING_QUEUE
+	 * to allow more slots in the queue.
+	 */
+	class queue_full : public std::runtime_error
+	{
+	public:
+		queue_full()
+			: std::runtime_error("The queue is full, the signal cannot be emitted. Increase SISL_MAX_SLOTS_LOCK_FREE_RING_QUEUE to allow more slots in the queue or undefined SISL_USE_LOCK_FREE_RING_QUEUE")
+		{
+		}
+	};
+
+	#define __SISL_SIG_DEFINE(name, ...) SISL_NAMESPACE##::signal<__VA_ARGS__> name;
 	#define __SISL_STR_DEFINE(x) #x
 	#define __SISL_STRINGIFY_DEFINE(x) __SISL_STR_DEFINE(x)
 	
@@ -325,6 +361,7 @@ namespace SISL_NAMESPACE
 		consteval std::thread::id get_empty_thread_id() noexcept { return std::thread::id(); }
 		struct delegate_info
 		{
+			void*			owner;			///< Pointer to the owner of the delegate (can be nullptr).
 			intptr_t		object;
 			std::size_t		function;
 			std::thread::id thread_affinity;
@@ -369,6 +406,85 @@ namespace SISL_NAMESPACE
 		void enqueue(std::function<void()>&& delegate, std::thread::id thread_id);
 	}
 
+	// forward declaration of signal class
+	template<typename...TARGS>
+	class signal;
+
+	/**
+	* @brief Connects a member function to a member signal.
+	*
+	* @param owner Reference to the object owning the signal.
+	* @param signal Member address of the signal (exemple: &COwner::my_signal).
+	* @param instance Reference to the receiver object.
+	* @param method Pointer to the member function.
+	* @param thread_affinity Optional thread ID to specify the thread in which the slot should be executed (default will be the thread of emission).
+	* @param type Connection type (default is automatic).
+	*/
+	template<typename...TARGS, typename TOWNER, typename TINSTANCE, typename TMETHOD>
+	void connect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, TINSTANCE& instance, TMETHOD method, std::thread::id thread_id = std::thread::id(), type_connection type = type_connection::automatic);
+
+	/**
+	* @brief Connects a member function to a standalone signal.
+	*
+	* @param signal Reference to the signal.
+	* @param instance Reference to the receiver object.
+	* @param method Pointer to the member function.
+	* @param thread_affinity Optional thread ID to specify the thread in which the slot should be executed (default will be the thread of emission).
+	* @param type Connection type (default is automatic).
+	*/
+	template<typename...TARGS, typename TINSTANCE, typename TMETHOD>
+	void connect(signal<TARGS...>& signal, TINSTANCE& instance, TMETHOD method, std::thread::id thread_id = std::thread::id(), type_connection type = type_connection::automatic);
+
+	/**
+	* @brief Connects a generic callable object (e.g. lambda, functor) to a member signal.
+	*
+	* @param owner Reference to the object owning the signal.
+	* @param signal Member address of the signal (exemple: &COwner::my_signal).
+	* @param functor Reference to the callable object.
+	* @param thread_affinity Optional thread ID to specify the thread in which the slot should be executed (default will be the thread of emission).
+	* @param type Connection type (default is automatic).
+	*/
+	template<typename...TARGS, typename TOWNER, typename TFUNCTOR>
+	requires (priv::COMPATIBLE_FUNCTOR<TFUNCTOR, TARGS...>)
+	void connect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, TFUNCTOR&& functor, std::thread::id thread_id = std::thread::id(), type_connection type = type_connection::automatic);
+
+	/**
+	* @brief Connects a generic callable object (e.g. lambda, functor) to a standalone signal.
+	*
+	* @param signal Reference to the signal.
+	* @param functor Reference to the callable object.
+	* @param thread_affinity Optional thread ID to specify the thread in which the slot should be executed (default will be the thread of emission).
+	* @param type Connection type (default is automatic).
+	*/
+	template<typename...TARGS, typename TFUNCTOR>
+	requires (priv::COMPATIBLE_FUNCTOR<TFUNCTOR, TARGS...>)
+	void connect(signal<TARGS...>& signal, TFUNCTOR&& functor, std::thread::id thread_id = std::thread::id(), type_connection type = type_connection::automatic);
+
+	/**
+	* @brief Connects a C/static function to a member signal.
+	*
+	* @param owner Reference to the object owning the signal.
+	* @param signal Member address of the signal (exemple: &COwner::my_signal).
+	* @param function Pointer to the function.
+	* @param thread_affinity Optional thread ID to specify the thread in which the slot should be executed (default will be the thread of emission).
+	* @param type Connection type (default is automatic).
+	*/
+	template<typename...TARGS, typename TOWNER, typename TFUNCTION>
+	requires (priv::COMPATIBLE_FUNCTION<TFUNCTION, TARGS...>)
+	void connect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, TFUNCTION&& function, std::thread::id thread_id = std::thread::id(), type_connection type = type_connection::automatic);
+
+	/**
+	* @brief Connects a C/static function to a standalone signal.
+	*
+	* @param signal Reference to the signal.
+	* @param function Pointer to the function.
+	* @param thread_affinity Optional thread ID to specify the thread in which the slot should be executed (default will be the thread of emission).
+	* @param type Connection type (default is automatic).
+	*/
+	template<typename...TARGS, typename TFUNCTION>
+	requires (priv::COMPATIBLE_FUNCTION<TFUNCTION, TARGS...>)
+	void connect(signal<TARGS...>& signal, TFUNCTION&& function, std::thread::id thread_id = std::thread::id(), type_connection type = type_connection::automatic);
+
 	
 	/**
 	* @class signal
@@ -383,70 +499,22 @@ namespace SISL_NAMESPACE
 	class signal
 	{
 	public:
-		/**
-		* @brief Constructs a signal with the specified owner.
-		* @param owner Reference to the object that owns this signal.
-		*/
-		template<typename T>
-		signal(T& owner) : m_owner(&owner)
-		{}
+		signal() = default;
 	
 		/**
 		* @brief The copy of a signal does not copy the slots.
 		*/
-		signal(const signal& other)
-			// The owner is calculated based on the offset of the other signal inside its owner object.
-			: m_owner(reinterpret_cast<void*>(reinterpret_cast<std::intptr_t>(this) - (reinterpret_cast<std::intptr_t>(&other) - reinterpret_cast<std::intptr_t>(other.m_owner))))
-		{}
+		signal(const signal&) {}
 
 		/**
 		* @brief Move constructor for the signal.
 		*/
-		signal(signal&& other) noexcept
-			// The owner is calculated based on the offset of the other signal inside its owner object.
-			: m_owner(reinterpret_cast<void*>(reinterpret_cast<std::intptr_t>(this) - (reinterpret_cast<std::intptr_t>(&other) - reinterpret_cast<std::intptr_t>(other.m_owner)))), m_slots(std::move(other.m_slots))
-		{
-			other.m_owner = nullptr; // Clear the moved-from signal's owner
-		}
+		signal(signal&&) noexcept {}
 
 		/**
 		* @brief No affectation constructor.
 		*/
 		signal& operator=(const signal&) = delete;
-
-		/**
-		* @brief Connects a member function to this signal.
-		*
-		* @param instance Reference to the receiver object.
-		* @param method Pointer to the member function.
-		* @param thread_affinity Optional thread ID to specify the thread in which the slot should be executed (default will be the thread of emission).
-		* @param type Connection type (default is automatic).
-		*/
-		template<typename TINSTANCE, typename TMETHOD> 
-		requires priv::COMPATIBLE_METHOD_OF<TMETHOD, TINSTANCE, TARGS...>
-		void connect(TINSTANCE& instance, TMETHOD method, std::thread::id thread_affinity = priv::get_empty_thread_id(), type_connection type = type_connection::automatic);
-
-		/**
-		* @brief Connects a generic callable object (e.g. lambda, functor).
-		*
-		* @param functor The callable object.
-		* @param thread_affinity Optional thread ID to specify the thread in which the slot should be executed (default will be the thread of emission).
-		* @param type Connection type (default is automatic).
-		*/
-		template<typename TFUNCTOR>
-		requires (priv::COMPATIBLE_FUNCTOR<TFUNCTOR, TARGS...>)
-		void connect(TFUNCTOR&& functor, std::thread::id thread_affinity = priv::get_empty_thread_id(), type_connection type = type_connection::automatic);
-
-		/**
-		 * @brief Connects a C/static function to the signal.
-		 *
-		 * @param function Pointer to the function.
-		 * @param thread_affinity Optional thread ID to specify the thread in which the slot should be executed (default will be the thread of emission).
-		 * @param type Connection type (default is automatic).
-		 */
-		template<typename TFUNCTION>
-		requires (priv::COMPATIBLE_FUNCTION<TFUNCTION, TARGS...>)
-		void connect(TFUNCTION&& function, std::thread::id thread_affinity = priv::get_empty_thread_id(), type_connection type = type_connection::automatic);
 
 		/**
 		* @brief Disconnects all slots connected to this signal.
@@ -488,29 +556,63 @@ namespace SISL_NAMESPACE
 		 */
 		void operator()(TARGS&&... args);
 
+		private:
+
+		template<typename TINSTANCE, typename TMETHOD>
+		requires priv::COMPATIBLE_METHOD_OF<TMETHOD, TINSTANCE, TARGS...>
+		void connect(void* owner, TINSTANCE& instance, TMETHOD method, std::thread::id thread_affinity, type_connection type);
+
+		template<typename TFUNCTOR>
+		requires (priv::COMPATIBLE_FUNCTOR<TFUNCTOR, TARGS...>)
+		void connect(void* owner, TFUNCTOR&& functor, std::thread::id thread_affinity, type_connection type);
+
+		template<typename TFUNCTION>
+		requires (priv::COMPATIBLE_FUNCTION<TFUNCTION, TARGS...>)
+		void connect(void* owner, TFUNCTION&& function, std::thread::id thread_affinity, type_connection type);
+
 		template<typename TINSTANCE, typename TMETHOD>
 		requires (!priv::COMPATIBLE_METHOD_OF<TMETHOD, TINSTANCE, TARGS...>)
-		void connect(TINSTANCE&, TMETHOD, std::thread::id, type_connection)
+		void connect(void*, TINSTANCE&, TMETHOD, std::thread::id, type_connection)
 		{ 
 			static_assert(sizeof(TINSTANCE) == 0, "[SISL] connect(): The provided method is not a member of the given object type or its argument types are incompatible with the signal's expected argument types.");
 		}
 
 		template<typename TFUNCTOR>
 		requires (priv::is_functor_v<TFUNCTOR> && !priv::COMPATIBLE_FUNCTOR<TFUNCTOR, TARGS...>)
-		void connect(TFUNCTOR&&, type_connection type = type_connection::automatic)
+		void connect(void*, TFUNCTOR&&, type_connection type = type_connection::automatic)
 		{
 			static_assert(sizeof(TFUNCTOR) == 0, "[SISL] connect(): The provided functor's argument types are incompatible with the signal's expected argument types.");
 		}
 
 		template<typename TFUNCTION>
 		requires (std::is_function_v<std::remove_pointer_t<TFUNCTION>> && !priv::COMPATIBLE_FUNCTION<TFUNCTION, TARGS...>)
-		void connect(TFUNCTION&&, type_connection type = type_connection::automatic)
+		void connect(void*, TFUNCTION&&, type_connection type = type_connection::automatic)
 		{
 			static_assert(sizeof(TFUNCTION) == 0, "[SISL] connect(): The provided function's argument types are incompatible with the signal's expected argument types.");
 		}
+
+		template<typename... UARGS, typename TOWNER, typename TINSTANCE, typename TMETHOD>
+		friend void connect(TOWNER&, signal<UARGS...> TOWNER::*, TINSTANCE&, TMETHOD, std::thread::id, type_connection);
+
+		template<typename... UARGS, typename TINSTANCE, typename TMETHOD>
+		friend void connect(signal<UARGS...>&, TINSTANCE&, TMETHOD, std::thread::id, type_connection);
+
+		template<typename... UARGS, typename TOWNER, typename TFUNCTOR>
+		requires (priv::COMPATIBLE_FUNCTOR<TFUNCTOR, UARGS...>)
+		friend void connect(TOWNER&, signal<UARGS...> TOWNER::*, TFUNCTOR&&, std::thread::id, type_connection);
+
+		template<typename... UARGS, typename TFUNCTOR>
+		requires (priv::COMPATIBLE_FUNCTOR<TFUNCTOR, UARGS...>)
+		friend void connect(signal<UARGS...>&, TFUNCTOR&&, std::thread::id, type_connection);
+
+		template<typename... UARGS, typename TOWNER, typename TFUNCTION>
+		requires (priv::COMPATIBLE_FUNCTION<TFUNCTION, UARGS...>)
+		friend void connect(TOWNER&, signal<UARGS...> TOWNER::*, TFUNCTION&&, std::thread::id, type_connection);
+
+		template<typename... UARGS, typename TFUNCTION>
+		requires (priv::COMPATIBLE_FUNCTION<TFUNCTION, UARGS...>)
+		friend void connect(signal<UARGS...>&, TFUNCTION&&, std::thread::id, type_connection);
 		
-	private:
-		void* m_owner;
 		std::vector<priv::slot<TARGS...>> m_slots;
 	};
 }
@@ -521,12 +623,53 @@ namespace SISL_NAMESPACE
 
 namespace SISL_NAMESPACE
 {
+	template<typename...TARGS, typename TOWNER, typename TINSTANCE, typename TMETHOD>
+	void connect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, TINSTANCE& instance, TMETHOD method, std::thread::id thread_id, type_connection type)
+	{
+		(owner.*signal).connect(&owner, instance, method, thread_id, type);
+	}
+
+	template<typename...TARGS, typename TINSTANCE, typename TMETHOD>
+	void connect(signal<TARGS...>& signal, TINSTANCE& instance, TMETHOD method, std::thread::id thread_id, type_connection type)
+	{
+		signal.connect(nullptr, instance, method, thread_id, type);
+	}
+
+	template<typename...TARGS, typename TOWNER, typename TFUNCTOR>
+	requires (priv::COMPATIBLE_FUNCTOR<TFUNCTOR, TARGS...>)
+	void connect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, TFUNCTOR&& functor, std::thread::id thread_id, type_connection type)
+	{
+		(owner.*signal).connect(&owner, std::forward<TFUNCTOR>(functor), thread_id, type);
+	}
+
+	template<typename...TARGS, typename TFUNCTOR>
+	requires (priv::COMPATIBLE_FUNCTOR<TFUNCTOR, TARGS...>)
+	void connect(signal<TARGS...>& signal, TFUNCTOR&& functor, std::thread::id thread_id, type_connection type)
+	{
+		signal.connect(nullptr, std::forward<TFUNCTOR>(functor), thread_id, type);
+	}
+
+	template<typename...TARGS, typename TOWNER, typename TFUNCTION>
+	requires (priv::COMPATIBLE_FUNCTION<TFUNCTION, TARGS...>)
+	void connect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, TFUNCTION&& function, std::thread::id thread_id, type_connection type)
+	{
+		(owner.*signal).connect(&owner, std::forward<TFUNCTION>(function), thread_id, type);
+	}
+
+	template<typename...TARGS, typename TFUNCTION>
+	requires (priv::COMPATIBLE_FUNCTION<TFUNCTION, TARGS...>)
+	void connect(signal<TARGS...>& signal, TFUNCTION&& function, std::thread::id thread_id, type_connection type)
+	{
+		signal.connect(nullptr, std::forward<TFUNCTION>(function), thread_id, type);
+	}
+
+
 	template<typename... TARGS>
 	template<typename TINSTANCE, typename TMETHOD>
 	requires priv::COMPATIBLE_METHOD_OF<TMETHOD, TINSTANCE, TARGS...>
-	void signal<TARGS...>::connect(TINSTANCE& instance, TMETHOD method, std::thread::id thread_affinity, type_connection type)
+	void signal<TARGS...>::connect(void* owner, TINSTANCE& instance, TMETHOD method, std::thread::id thread_affinity, type_connection type)
 	{
-		const priv::delegate_info info = { reinterpret_cast<intptr_t>(&instance), typeid(method).hash_code(), thread_affinity, type };
+		const priv::delegate_info info = { owner, reinterpret_cast<intptr_t>(&instance), typeid(method).hash_code(), thread_affinity, type };
 		if (type & type_connection::unique)
 		{
 			const auto it = std::find_if(m_slots.begin(), m_slots.end(), [&info](const priv::slot<TARGS...>& slot)
@@ -589,9 +732,9 @@ namespace SISL_NAMESPACE
 	template<typename... TARGS>
 	template<typename TFUNCTOR>
 	requires (priv::COMPATIBLE_FUNCTOR<TFUNCTOR, TARGS...>)
-	void signal<TARGS...>::connect(TFUNCTOR&& functor, std::thread::id thread_affinity, type_connection type)
+	void signal<TARGS...>::connect(void* owner, TFUNCTOR&& functor, std::thread::id thread_affinity, type_connection type)
 	{
-		const priv::delegate_info info = { reinterpret_cast<intptr_t>(&functor), 0, thread_affinity, type };
+		const priv::delegate_info info = { owner, reinterpret_cast<intptr_t>(&functor), 0, thread_affinity, type };
 		if (type & type_connection::unique)
 		{
 			const auto it = std::find_if(m_slots.begin(), m_slots.end(), [&info](const priv::slot<TARGS...>& slot)
@@ -622,9 +765,9 @@ namespace SISL_NAMESPACE
 	template<typename... TARGS>
 	template<typename TFUNCTION>
 	requires (priv::COMPATIBLE_FUNCTION<TFUNCTION, TARGS...>)
-	void signal<TARGS...>::connect(TFUNCTION&& function, std::thread::id thread_affinity, type_connection type)
+	void signal<TARGS...>::connect(void* owner, TFUNCTION&& function, std::thread::id thread_affinity, type_connection type)
 	{
-		const priv::delegate_info info = { reinterpret_cast<intptr_t>(&function), 0, thread_affinity, type };
+		const priv::delegate_info info = { owner, reinterpret_cast<intptr_t>(&function), 0, thread_affinity, type };
 		if (type & type_connection::unique)
 		{
 			const auto it = std::find_if(m_slots.begin(), m_slots.end(), [&info](const priv::slot<TARGS...>& slot)
@@ -692,7 +835,6 @@ namespace SISL_NAMESPACE
 	void signal<TARGS...>::operator()(TARGS&&... args)
 	{
 		const std::thread::id current_thread = std::this_thread::get_id();
-		priv::gtl_current_sender = &m_owner;
 		for (auto it = m_slots.begin(); it != m_slots.end(); )
 		{
 			const auto& slot = *it;
@@ -718,7 +860,7 @@ namespace SISL_NAMESPACE
 					}
 					std::promise<void> done;
 					auto future_done = done.get_future();
-					priv::enqueue([sender = m_owner, slot, &done, ...args_capture = std::forward<TARGS>(args)]() mutable
+					priv::enqueue([sender = info.owner, slot, &done, ...args_capture = std::forward<TARGS>(args)]() mutable
 					{
 						priv::gtl_current_sender = sender;
 						try
@@ -735,8 +877,9 @@ namespace SISL_NAMESPACE
 					future_done.wait();
 				}
 				// If the slot is queued, we just enqueue it
+				else
 				{
-					priv::enqueue([sender = m_owner, slot, ...args_capture = std::forward<TARGS>(args)]() mutable
+					priv::enqueue([sender = info.owner, slot, ...args_capture = std::forward<TARGS>(args)]() mutable
 					{
 						priv::gtl_current_sender = sender;
 						slot(std::move(args_capture)...);
@@ -747,7 +890,9 @@ namespace SISL_NAMESPACE
 			// If the slot is direct, we call it directly
 			else
 			{
+				priv::gtl_current_sender = info.owner;
 				result = slot(std::forward<TARGS>(args)...);
+				priv::gtl_current_sender = nullptr;
 			}
 			// If the slot is single-shot, remove it after calling
 			if (!result || ((int)info.type & (int)type_connection::single_shot))
@@ -755,7 +900,6 @@ namespace SISL_NAMESPACE
 			else
 				++it;
 		}
-		priv::gtl_current_sender = nullptr;
 	}
 
 	namespace priv
@@ -772,8 +916,10 @@ namespace SISL_NAMESPACE
 				std::atomic<Node*> next;
 				Node(T value) : data(value), next(nullptr) {}
 			};
-			std::atomic<Node*> m_head;
-			std::atomic<Node*> m_tail;
+
+			// cache line size alignment to avoid false sharing
+			alignas(std::hardware_constructive_interference_size) std::atomic<Node*> m_head;
+			alignas(std::hardware_constructive_interference_size) std::atomic<Node*> m_tail;
 
 		public:
 			MPSC_lock_free_queue()
@@ -792,7 +938,7 @@ namespace SISL_NAMESPACE
 					current_node = next_node;
 				}
 			}
-			void push(T value)
+			bool push(T value)
 			{
 				Node* new_node = new Node(std::move(value));
 				while (true)
@@ -805,7 +951,7 @@ namespace SISL_NAMESPACE
 						if (old_tail->next.compare_exchange_weak(next_node, new_node, std::memory_order_release))
 						{
 							m_tail.compare_exchange_strong(old_tail, new_node, std::memory_order_release);
-							return;
+							return true;
 						}
 					}
 					else
@@ -815,7 +961,7 @@ namespace SISL_NAMESPACE
 				}
 			}
 
-			bool pop(T& value)
+			bool pop(T& value) noexcept
 			{
 				while (true)
 				{
@@ -831,15 +977,81 @@ namespace SISL_NAMESPACE
 						delete old_head;
 						return true;
 					}
-					return false;
 				}
 			}
 
 			bool empty() const
 			{
-				Node* head = m_head.load(std::memory_order_relaxed);
-				Node* next_node = head->next.load(std::memory_order_relaxed);
+				Node* head = m_head.load(std::memory_order_acquire);
+				Node* next_node = head->next.load(std::memory_order_acquire);
 				return next_node == nullptr;
+			}
+		};
+
+		// BETA
+		// MPSC (Multiple Producer Single Consumer) Lock-Free Ring Queue
+		// Only ONE consumer thread is allowed to pop elements from the queue
+		// This is a fixed-size ring-queue, push will fail if the queue is full.
+		// Faster than MPSC_lock_free_queue because it uses a fixed-size array and no dynamic memory allocation.
+		template<typename T, std::size_t CAPACITY>
+		class MPSC_lock_free_ring_queue
+		{
+		private:
+			struct alignas(std::hardware_constructive_interference_size) Node
+			{
+				T data;
+				std::atomic<bool> is_valid;
+			};
+			alignas(std::hardware_constructive_interference_size) std::array<Node, CAPACITY> m_nodes;
+			alignas(std::hardware_constructive_interference_size) std::atomic<std::size_t> m_head;
+			alignas(std::hardware_constructive_interference_size) std::atomic<std::size_t> m_tail;
+
+		public:
+			MPSC_lock_free_ring_queue()
+			{
+				m_head.store(0, std::memory_order_relaxed);
+				m_tail.store(0, std::memory_order_relaxed);
+				for (auto& node : m_nodes)
+				{
+					node.is_valid.store(false, std::memory_order_relaxed);
+				}
+			}
+			bool push(T value)
+			{
+				size_t old_tail = 0;
+				size_t new_tail = 0;
+				do
+				{
+					old_tail = m_tail.load(std::memory_order_acquire);
+					new_tail = (old_tail + 1) % CAPACITY;
+					if (new_tail == m_head.load(std::memory_order_acquire))
+					{
+						return false; // Queue is full
+					}
+				} while (!m_tail.compare_exchange_weak(old_tail, new_tail, std::memory_order_release, std::memory_order_relaxed));
+				m_nodes[old_tail].data = std::move(value);
+				m_nodes[old_tail].is_valid.store(true, std::memory_order_release);
+				return true;
+			}
+			bool pop(T& value) noexcept
+			{
+				size_t old_head = m_head.load(std::memory_order_acquire);
+				if (old_head == m_tail.load(std::memory_order_acquire))
+				{
+					return false; // Queue is empty
+				}
+				if (!m_nodes[old_head].is_valid.load(std::memory_order_acquire))
+				{
+					return false; // The node is not valid, this can happen if the node was not pushed yet.
+				}
+				value = std::move(m_nodes[old_head].data);
+				m_nodes[old_head].is_valid.store(false, std::memory_order_release);
+				m_head.store((old_head + 1) % CAPACITY, std::memory_order_release);
+				return true;
+			}
+			bool empty() const
+			{
+				return m_head.load(std::memory_order_acquire) == m_tail.load(std::memory_order_acquire);
 			}
 		};
 	}
@@ -860,10 +1072,16 @@ namespace SISL_NAMESPACE
 		// The thread-local current sender.
 		thread_local void* gtl_current_sender = nullptr;
 
+#ifdef SISL_USE_LOCK_FREE_RING_QUEUE
+		using lock_free_queue = MPSC_lock_free_ring_queue<std::function<void()>, SISL_MAX_SLOTS_LOCK_FREE_RING_QUEUE>; // Example capacity, can be adjusted
+#else
+		using lock_free_queue = MPSC_lock_free_queue<std::function<void()>>; // Default lock-free queue
+#endif
 		// A thread-safe queue for signals.
 		struct async_delegates
 		{
-			priv::MPSC_lock_free_queue<std::function<void()>> m_queue;
+			lock_free_queue m_queue;
+			std::mutex m_mtx_cv;
 			std::condition_variable m_cv;
 		};
 
@@ -908,7 +1126,12 @@ namespace SISL_NAMESPACE
 
 			void terminates()
 			{
-				m_terminated = true;
+				m_terminated.store(true, std::memory_order_release);
+				std::shared_lock<std::shared_mutex> read_lock(m_mutex);
+				for (const auto& [thread_id, delegates] : m_async_delegates)
+				{
+					delegates->m_cv.notify_all();
+				}
 			}
 
 			std::unordered_map<std::thread::id, std::unique_ptr<async_delegates>> m_async_delegates;
@@ -919,10 +1142,10 @@ namespace SISL_NAMESPACE
 		void enqueue(std::function<void()>&& delegate, std::thread::id thread_id)
 		{
 			auto& delegates = hashmap_signal_queue::instance().get_thread_queue(thread_id);
-			{
-				delegates.m_queue.push(std::move(delegate));
-			}
+			const bool pushed = delegates.m_queue.push(std::move(delegate));
 			delegates.m_cv.notify_one();
+			if (!pushed)
+				throw queue_full();
 		}
 	}
 
@@ -934,33 +1157,35 @@ namespace SISL_NAMESPACE
 			priv::gtl_async_delegates = &priv::hashmap_signal_queue::instance().get_thread_queue(std::this_thread::get_id());
 		}
 		auto& cv = priv::gtl_async_delegates->m_cv;
+		auto& mtx_cv = priv::gtl_async_delegates->m_mtx_cv;
 		auto& queue = priv::gtl_async_delegates->m_queue;
 		const auto& terminated = priv::hashmap_signal_queue::instance().terminated();
-		if(terminated)
+		if(terminated.load(std::memory_order_acquire))
 		{
 			return polling_result::terminated; // If SISL is terminated, we return immediately.
 		}
-		std::mutex mtx;
-		std::unique_lock<std::mutex> lock(mtx);
+		std::unique_lock<std::mutex> lock(mtx_cv);
 		if (timeout == blocking_polling)
 		{
-			cv.wait(lock, [&queue, &terminated] { return !queue.empty() || terminated; });
+			cv.wait(lock, [&queue, &terminated] { return terminated.load(std::memory_order_acquire) || !queue.empty(); });
 		}
 		else if (timeout.count() > 0)
 		{
-			cv.wait_for(lock, timeout, [&queue, &terminated] { return !queue.empty() || terminated; });
+			cv.wait_for(lock, timeout, [&queue, &terminated] { return terminated.load(std::memory_order_acquire) || !queue.empty(); });
 		}
 		if(queue.empty())
 		{
-			return terminated ? polling_result::terminated : polling_result::timeout;
+			return terminated.load(std::memory_order_acquire) ? polling_result::terminated : polling_result::timeout;
 		}
 		while (!queue.empty())
 		{
+			if (terminated.load(std::memory_order_acquire))
+				return polling_result::terminated;
 			std::function<void()> delegate;
 			if (queue.pop(delegate))
 				delegate();
 		}
-		return terminated ? polling_result::terminated : polling_result::slots_invoked;
+		return terminated.load(std::memory_order_acquire) ? polling_result::terminated : polling_result::slots_invoked;
 	}
 
 	void terminate()
