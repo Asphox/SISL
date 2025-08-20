@@ -1,6 +1,6 @@
 # SISL
 
-SISL is a modern single-header C++20 SIgnal/SLot library designed for type-safe, thread-aware event communication between objects. It provides a flexible API for connecting member functions, C-style functions, lambdas, and functors as slots, with advanced threading and connection policies.
+SISL is a cross-platform/cross-compiler modern single-header C++20 SIgnal/SLot library designed for type-safe, thread-aware event communication between objects. It provides a flexible API for connecting member functions, C-style functions, lambdas, and functors as slots, with advanced threading and connection policies.
 
 # Inspirations
 
@@ -15,6 +15,7 @@ SISL is inspired by the Qt signal/slot mechanism, but aims to provide a more mod
 - **Dangling pointer safety**: Automatically disconnect slots when the instance is destroyed, preventing dangling pointers (see 'dangling pointer safety' section).)
 - **Threading support**: Signals can be emitted and processed in different threads, with connection policies (`direct`, `queued`, `blocking_queued`, etc.).
 - **Single-shot and unique connections**: Support for auto-disconnect after first trigger and prevention of duplicate connections.
+- **Cross-platform / Cross-compiler**: SISL is implemented only in standard C++20
 
 ## How to use
 To use SISL: 
