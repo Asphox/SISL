@@ -311,3 +311,11 @@ See doxygen comments in the source code.
 This library is currently in development and may change in future versions.
 Some optimizations will be added in the future, such as a more efficient memory management.
 Please report any issues or suggestions on the GitHub repository.
+
+#TODO
+- Thread safety of connect/disconnect (+ refactor)
+- better managment for weak_ptr / enable_shared_from_this
+- terminate a specific thread
+- TESTS
+- benchmark ?
+
