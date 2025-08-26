@@ -6,7 +6,7 @@ SISL is a cross-platform/cross-compiler modern single-header C++20 SIgnal/SLot l
 
 SISL is inspired by the Qt signal/slot mechanism, but aims to provide a more modern and type-safe implementation using C++20 features without the need for a preprocessor (Qt's MOC). It is designed to be lightweight, efficient, and easy to use in various new and existing C++ projects.
 
-## Features
+# Features
 
 - **Configurable namespace**: All public symbols are under the `sisl` namespace (can be changed via `SISL_NAMESPACE` macro for integration purposes).
 - **Type-safe signals**: Signals can carry any argument types and connect to slots with "static-compatibility" between signal and slot arguments.
@@ -18,7 +18,7 @@ SISL is inspired by the Qt signal/slot mechanism, but aims to provide a more mod
 - **Cross-platform / Cross-compiler**: SISL is implemented only in standard C++20
 - **Zero-overhead forwarding**: References (lvalue and rvalue) are forwarded without copies, while value arguments incur at most a single copy.
 
-## How to use
+# How to use
 To use SISL: 
 1) Include the header 'sisl.hpp' in your project where needed:
 ```cpp
@@ -31,7 +31,7 @@ To use SISL:
 ```
 3) Enjoy !
 
-## Example of a simple signal-slot usage:
+# Example of a simple signal-slot usage:
 ```cpp
 #include <iostream>
 #define SISL_IMPLEMENTATION
@@ -63,7 +63,7 @@ int main()
 }
 ```
 
-## How can I know who emitted the signal inside a slot?
+# How can I know who emitted the signal inside a slot?
 You can use the `sisl::sender<T>()` function inside a slot to get a pointer to the object that emitted the signal. This is useful for identifying the sender when multiple objects can emit the same signal.
 ```cpp
 #include <iostream>
@@ -107,7 +107,7 @@ int main()
 ```
 
 
-## Dangling pointer safety
+# Dangling pointer safety
 SISL can automatically disconnects slots when the instance they are connected to is destroyed. This prevents dangling pointers and ensures that slots do not attempt to access invalid memory.
 To enable this feature, a slot owner **MUST** be managed by std::shared_ptr **AND** inherit from std::enable_shared_from_this.
 ```cpp
@@ -147,7 +147,7 @@ int main()
 }
 ```
 
-## Threading and connection policies
+# Threading and connection policies
 SISL supports different threading models and connection policies for signal-slot connections. The `type_connection` enum defines how slots are connected and executed:
 ```cpp
 enum class type_connection {
@@ -208,7 +208,7 @@ int main()
 }
 ```
 
-### Advanced Threading Settings
+## Advanced Threading Settings
 
 By default, SISL uses a lock-free Multiple Producer Single Consumer (MPSC) queue implemented via a linked list to store inter-thread signal emissions.
 Although this implementation is efficient and allows an 'unlimited' number of pending signals per thread, it can cause slowdowns in highly multithreaded environments due to frequent calls to the dynamic allocator.
@@ -233,19 +233,19 @@ And, if needed, specify the ring size (default is 256):
 
 ---
 
-### Summary
+## Summary
 
 |                                 | Without Ring-Buffer (default) | With Ring-Buffer (SISL\_USE\_LOCK\_FREE\_RING\_QUEUE) |
 | ------------------------------- | ----------------------------- | ----------------------------------------------------- |
 | Performance                     | High                          | Very high                                             |
 | # of pending signals per thread | Unlimited                     | Limited                                               |
 
-### Perfect forwarding and threading
+## Perfect forwarding and threading
 Perfect forwarding of arguments is still preserved with queued connections (no unnecessary copies).
 However, if a type in slot's parameters is not movable, an additional mandatory copy is made. 
 
 
-## SISL API Documentation
+# SISL API Documentation
 
 ### Class `sisl::signal<TARGS...>`
 
@@ -304,10 +304,10 @@ Returns a pointer to the object that emitted the currently executing signal (ins
 This is useful for identifying the sender when multiple objects can emit the same signal.
 Returns `nullptr` if called outside a slot.
 
-### For more documentation
+# For more documentation
 See doxygen comments in the source code.
 
-### Disclaimer
+# Disclaimer
 This library is currently in development and may change in future versions.
 Some optimizations will be added in the future, such as a more efficient memory management.
 Please report any issues or suggestions on the GitHub repository.
