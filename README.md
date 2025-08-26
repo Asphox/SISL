@@ -16,6 +16,7 @@ SISL is inspired by the Qt signal/slot mechanism, but aims to provide a more mod
 - **Threading support**: Signals can be emitted and processed in different threads, with connection policies (`direct`, `queued`, `blocking_queued`, etc.).
 - **Single-shot and unique connections**: Support for auto-disconnect after first trigger and prevention of duplicate connections.
 - **Cross-platform / Cross-compiler**: SISL is implemented only in standard C++20
+- **Zero-overhead forwarding**: References (lvalue and rvalue) are forwarded without copies, while value arguments incur at most a single copy.
 
 ## How to use
 To use SISL: 
@@ -308,3 +309,7 @@ See doxygen comments in the source code.
 This library is currently in development and may change in future versions.
 Some optimizations will be added in the future, such as a more efficient memory management.
 Please report any issues or suggestions on the GitHub repository.
+
+### TODO
+
+Zero overhead forwarding for queued connections
