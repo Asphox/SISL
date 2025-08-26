@@ -208,7 +208,7 @@ int main()
 }
 ```
 
-## Advanced Threading Settings
+### Advanced Threading Settings
 
 By default, SISL uses a lock-free Multiple Producer Single Consumer (MPSC) queue implemented via a linked list to store inter-thread signal emissions.
 Although this implementation is efficient and allows an 'unlimited' number of pending signals per thread, it can cause slowdowns in highly multithreaded environments due to frequent calls to the dynamic allocator.
@@ -240,7 +240,9 @@ And, if needed, specify the ring size (default is 256):
 | Performance                     | High                          | Very high                                             |
 | # of pending signals per thread | Unlimited                     | Limited                                               |
 
-
+### Perfect forwarding and threading
+Perfect forwarding of arguments is still preserved with queued connections (no unnecessary copies).
+However, if a type in slot's parameters is not movable, an additional mandatory copy is made. 
 
 
 ## SISL API Documentation
@@ -309,7 +311,3 @@ See doxygen comments in the source code.
 This library is currently in development and may change in future versions.
 Some optimizations will be added in the future, such as a more efficient memory management.
 Please report any issues or suggestions on the GitHub repository.
-
-### TODO
-
-Zero overhead forwarding for queued connections
