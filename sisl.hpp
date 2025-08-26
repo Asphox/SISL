@@ -864,6 +864,15 @@ namespace SISL_NAMESPACE
 		emit_impl(std::forward<UARGS>(args)...);
 	}
 
+	template<typename T>
+	auto get_capturable_value(T&& arg)
+	{
+		if constexpr (std::is_reference_v<T>)
+			return std::ref(arg);
+		else
+			return std::forward<T>(arg);
+	}
+
 	template<typename... TARGS>
 	template<typename... UARGS>
 	void signal<TARGS...>::emit_impl(UARGS&&... args)
@@ -894,7 +903,7 @@ namespace SISL_NAMESPACE
 					}
 					std::promise<void> done;
 					auto future_done = done.get_future();
-					priv::enqueue([slot, &done, ...args_capture = std::decay_t<TARGS>(args)]() mutable
+					priv::enqueue([slot, &done, ...args_capture = get_capturable_value(std::forward<UARGS>(args))]() mutable
 					{
 						priv::gtl_current_sender = slot.get_info().owner;
 						try
@@ -913,10 +922,10 @@ namespace SISL_NAMESPACE
 				// If the slot is queued, we just enqueue it
 				else
 				{
-					priv::enqueue([slot, ...args_capture = std::decay_t<TARGS>(args)]() mutable
+					priv::enqueue([slot, ...args_capture = get_capturable_value(std::forward<UARGS>(args))]() mutable
 					{
 						priv::gtl_current_sender = slot.get_info().owner;
-						slot(args_capture...);
+						slot(std::move(args_capture)...);
 						priv::gtl_current_sender = nullptr;
 					}, target_thread);
 				}
@@ -948,7 +957,7 @@ namespace SISL_NAMESPACE
 			{
 				T data;
 				std::atomic<Node*> next;
-				Node(T value) : data(value), next(nullptr) {}
+				Node(T value) : data(std::move(value)), next(nullptr) {}
 			};
 
 			// cache line size alignment to avoid false sharing
