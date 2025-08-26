@@ -114,7 +114,6 @@
 // <=====================================================================================>
 // <=============					 	Includes							=============>
 // <=====================================================================================>
-#include <optional>
 #include <vector>
 #include <functional>
 #include <thread>
@@ -122,7 +121,6 @@
 #include <future>
 #include <array>
 #include <memory>
-#include <variant>
 
 
 namespace SISL_NAMESPACE
