@@ -33,6 +33,8 @@ struct TEST
 	{
 		std::cout << "Button clicked! C++" << std::endl;
 	}
+
+	void func2(CopyMe);
 };
 
 
@@ -60,7 +62,9 @@ int main()
 	MyButton button1("MyButton1");
 	CopyMe c;
 	sisl::connect(button1, &MyButton::onClick, test, &TEST::func, t.get_id());
-	//sisl::connect(button1, &MyButton::onClick, [](CopyMe s) { std::cout << "Button clicked! lambda" << std::endl; (void)s; }, t.get_id());
+	sisl::disconnect(button1, &MyButton::onClick, test, &TEST::func);
+	sisl::disconnect(button1, &MyButton::onClick, &TEST::func);
+	sisl::disconnect_all_from(button1, &MyButton::onClick, test);
 	emit button1.onClick(c, c);
 	std::this_thread::sleep_for(std::chrono::seconds(1)); // Give some time for the thread to process signals
 	sisl::terminate();

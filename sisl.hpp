@@ -438,7 +438,6 @@ namespace SISL_NAMESPACE
 				return call_impl(std::forward<UARGS>(args)...);
 			}
 
-		private:
 			// Perfect forwarding for any type of arguments (lvalue, rvalue, const, non-const)
 			template<typename... UARGS>
 			inline bool call_impl(UARGS&&... args)
@@ -533,7 +532,84 @@ namespace SISL_NAMESPACE
 	requires (priv::COMPATIBLE_FUNCTION<TFUNCTION, TARGS...>)
 	void connect(signal<TARGS...>& signal, TFUNCTION&& function, std::thread::id thread_id = std::thread::id(), type_connection type = type_connection::automatic);
 
-	
+	/**
+	* @brief Disconnects all slots connected to this member signal.
+	* 
+	* @param owner Reference to the object owning the signal
+	* @param signal Member address of the signal (exemple : &COwner::my_signal)
+	*/
+	template <typename...TARGS, typename TOWNER>
+	void disconnect_all(TOWNER& owner, signal<TARGS...> TOWNER::* signal);
+
+	/**
+	* @brief Disconnects all slots connected to the signal.
+	* 
+	* @param signal Reference to the signal.
+	*/
+	template<typename...TARGS>
+	void disconnect_all(signal<TARGS...>& signal);
+
+	/**
+	* @brief Disconnects a specific slot connected to this member signal.
+	* 
+	* @param owner Reference to the object owning the signal
+	* @param signal Member address of the signal (exemple : &COwner::my_signal)
+	* @param instance Reference to the receiver object.
+	* @param method Pointer to the member function.
+	*/
+	template<typename... TARGS, typename TOWNER, typename TINSTANCE, typename TMETHOD>
+	void disconnect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, const TINSTANCE& instance, TMETHOD method);
+
+	/**
+	* @brief Disconnects a specific slot connected to this signal.
+	* 
+	* @param signal Reference to the signal.
+	* @param instance Reference to the receiver object.
+	* @param method Pointer to the member function.
+	*/
+	template<typename... TARGS, typename TINSTANCE, typename TMETHOD>
+	void disconnect(signal<TARGS...>& signal, const TINSTANCE& instance, TMETHOD method);
+
+	/**
+	* @brief Disconnects all slots owned by an object from this member signal.
+	*
+	* @param owner Reference to the object owning the signal.
+	* @param signal Member address of the signal (exemple : &COwner::my_signal)
+	* @param object Reference to the object whose slots should be disconnected.
+	*/
+	template<typename... TARGS, typename TOWNER, typename TOBJECT>
+	void disconnect_all_from(TOWNER& owner, signal<TARGS...> TOWNER::* signal, const TOBJECT& object);
+
+	/**
+	* @brief Disconnects all slots owned by an object from this signal.
+	* 
+	* @param signal Reference to the signal.
+	* @param object Reference to the object whose slots should be disconnected.
+	*/
+	template<typename... TARGS, typename TOBJECT>
+	void disconnect_all_from(signal<TARGS...>& signal, const TOBJECT& object);
+
+	/**
+	* @brief Disconnects all slots relying on a specific method from this member signal.
+	* 
+	* @param owner Reference to the object owning the signal.
+	* @param signal Member address of the signal (exemple : &COwner::my_signal)
+	* @param method Member function pointer to disconnect.
+	*/
+	template<typename... TARGS, typename TOWNER, typename TMETHOD>
+	requires (std::is_member_function_pointer_v<TMETHOD>)
+	void disconnect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, TMETHOD method);
+
+	/**
+	* @brief Disconnects all slots relying on a specific method from this signal.
+	*
+	* @param signal Reference to the signal.
+	* @param method Member function pointer to disconnect.
+	*/
+	template<typename... TARGS, typename TMETHOD>
+	requires (std::is_member_function_pointer_v<TMETHOD>)
+	void disconnect(signal<TARGS...>& signal, TMETHOD method);
+
 	/**
 	* @class signal
 	* @brief Represents a signal that can notify connected slots.
@@ -565,36 +641,6 @@ namespace SISL_NAMESPACE
 		signal& operator=(const signal&) = delete;
 
 		/**
-		* @brief Disconnects all slots connected to this signal.
-		*/
-		void disconnect_all();
-
-		/**
-		 * @brief Disconnects a specific slot from this signal.
-		 *
-		 * @param instance Reference to the object that owns the slot.
-		 * @param method Pointer to the member function of the slot.
-		 */
-		template<typename TINSTANCE, typename TMETHOD>
-		void disconnect(const TINSTANCE& instance, TMETHOD method);
-
-		/**
-		 * @brief Disconnects all slots connected to a specific instance.
-		 *
-		 * @param instance Reference to the object whose slots should be disconnected.
-		 */
-		template<typename TOBJECT>
-		void disconnect(const TOBJECT& instance);
-
-		/**
-		 * @brief Disconnects all slots connected to a specific method.
-		 *
-		 * @param method Pointer to the member function of the slot.
-		 */
-		template<typename METHOD>
-		void disconnect(METHOD method);
-
-		/**
 		 * @brief Invokes all connected slots with the provided arguments.
 		 *
 		 * This method calls each connected slot with the given arguments, removing any single-shot slots
@@ -605,7 +651,7 @@ namespace SISL_NAMESPACE
 		template<typename... UARGS>
 		void operator()(UARGS&&... args);
 
-		private:
+	private:
 		
 		template<typename... UARGS>
 		void emit_impl(UARGS&&... args);
@@ -643,6 +689,17 @@ namespace SISL_NAMESPACE
 			static_assert(sizeof(TFUNCTION) == 0, "[SISL] connect(): The provided function's argument types are incompatible with the signal's expected argument types.");
 		}
 
+		void disconnect_all();
+
+		template<typename TINSTANCE, typename TMETHOD>
+		void disconnect(TINSTANCE& instance, TMETHOD method);
+
+		template<typename TOBJECT>
+		void disconnect_all_from(const TOBJECT& instance);
+
+		template<typename TMETHOD>
+		void disconnect(TMETHOD method);
+
 		template<typename... UARGS, typename TOWNER, typename TINSTANCE, typename TMETHOD>
 		friend void connect(TOWNER&, signal<UARGS...> TOWNER::*, TINSTANCE&, TMETHOD, std::thread::id, type_connection);
 
@@ -664,6 +721,32 @@ namespace SISL_NAMESPACE
 		template<typename... UARGS, typename TFUNCTION>
 		requires (priv::COMPATIBLE_FUNCTION<TFUNCTION, UARGS...>)
 		friend void connect(signal<UARGS...>&, TFUNCTION&&, std::thread::id, type_connection);
+
+		template<typename... UARGS, typename TOWNER>
+		friend void disconnect_all(TOWNER&, signal<UARGS...> TOWNER::*);
+
+		template<typename... UARGS>
+		friend void disconnect_all(signal<UARGS...>&);
+
+		template<typename... UARGS, typename TOWNER, typename TINSTANCE, typename TMETHOD>
+		friend void disconnect(TOWNER&, signal<UARGS...> TOWNER::*, const TINSTANCE&, TMETHOD);
+
+		template<typename... UARGS, typename TINSTANCE, typename TMETHOD>
+		friend void disconnect(signal<UARGS...>&, const TINSTANCE&, TMETHOD);
+
+		template<typename... UARGS, typename TOWNER, typename TOBJECT>
+		friend void disconnect_all_from(TOWNER&, signal<UARGS...> TOWNER::*, const TOBJECT&);
+
+		template<typename... UARGS, typename TOBJECT>
+		friend void disconnect_all_from(signal<UARGS...>&, const TOBJECT&);
+
+		template<typename... UARGS, typename TOWNER, typename TMETHOD>
+		requires (std::is_member_function_pointer_v<TMETHOD>)
+		friend void disconnect(TOWNER&, signal<UARGS...> TOWNER::*, TMETHOD);
+
+		template<typename... UARGS, typename TMETHOD>
+		requires (std::is_member_function_pointer_v<TMETHOD>)
+		friend void disconnect(signal<UARGS...>&, TMETHOD);
 		
 		std::vector<priv::slot<TARGS...>> m_slots;
 	};
@@ -713,6 +796,56 @@ namespace SISL_NAMESPACE
 	void connect(signal<TARGS...>& signal, TFUNCTION&& function, std::thread::id thread_id, type_connection type)
 	{
 		signal.connect(nullptr, std::forward<TFUNCTION>(function), thread_id, type);
+	}
+
+	template <typename...TARGS, typename TOWNER>
+	void disconnect_all(TOWNER& owner, signal<TARGS...> TOWNER::* signal)
+	{
+		(owner.*signal).disconnect_all();
+	}
+
+	template<typename...TARGS>
+	void disconnect_all(signal<TARGS...>& signal)
+	{
+		signal.disconnect_all();
+	}
+
+	template<typename... TARGS, typename TOWNER, typename TINSTANCE, typename TMETHOD>
+	void disconnect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, const TINSTANCE& instance, TMETHOD method)
+	{
+		(owner.*signal).disconnect(instance, method);
+	}
+
+	template<typename... TARGS, typename TINSTANCE, typename TMETHOD>
+	void disconnect(signal<TARGS...>& signal, const TINSTANCE& instance, TMETHOD method)
+	{
+		signal.disconnect(instance, method);
+	}
+
+	template<typename... TARGS, typename TOWNER, typename TOBJECT>
+	void disconnect_all_from(TOWNER& owner, signal<TARGS...> TOWNER::* signal, const TOBJECT& object)
+	{
+		(owner.*signal).disconnect_all_from(object);
+	}
+
+	template<typename... TARGS, typename TOBJECT>
+	void disconnect_all_from(signal<TARGS...>& signal, const TOBJECT& object)
+	{
+		signal.disconnect_all_from(object);
+	}
+
+	template<typename... TARGS, typename TOWNER, typename TMETHOD>
+	requires (std::is_member_function_pointer_v<TMETHOD>)
+	void disconnect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, TMETHOD method)
+	{
+		(owner.*signal).disconnect(method);
+	}
+
+	template<typename... TARGS, typename TMETHOD>
+	requires (std::is_member_function_pointer_v<TMETHOD>)
+	void disconnect(signal<TARGS...>& signal, TMETHOD method)
+	{
+		signal.disconnect(method);
 	}
 
 
@@ -827,31 +960,31 @@ namespace SISL_NAMESPACE
 
 	template<typename... TARGS>
 	template<typename TINSTANCE, typename TMETHOD>
-	void signal<TARGS...>::disconnect(const TINSTANCE& instance, TMETHOD method)
+	void signal<TARGS...>::disconnect(TINSTANCE& instance, TMETHOD method)
 	{
-		std::erase_if(m_slots, [&instance, method](const priv::delegate<TARGS...>& slot)
+		std::erase_if(m_slots, [&instance, method](const priv::slot<TARGS...>& slot)
 		{
-			return slot.m_id.object == reinterpret_cast<intptr_t>(&instance) && slot.m_id.function == typeid(method).hash_code();
+			return slot.m_info.object == reinterpret_cast<intptr_t>(&instance) && slot.m_info.function == typeid(method).hash_code();
 		});
 	}
 
 	template<typename... TARGS>
 	template<typename TOBJECT>
-	void signal<TARGS...>::disconnect(const TOBJECT& instance)
+	void signal<TARGS...>::disconnect_all_from(const TOBJECT& instance)
 	{
-		std::erase_if(m_slots, [&instance](const priv::delegate<TARGS...>& slot)
+		std::erase_if(m_slots, [&instance](const priv::slot<TARGS...>& slot)
 		{
-			return slot.m_id.object == reinterpret_cast<intptr_t>(&instance);
+			return slot.m_info.object == reinterpret_cast<intptr_t>(&instance);
 		});
 	}
 
 	template<typename... TARGS>
-	template<typename METHOD>
-	void signal<TARGS...>::disconnect(METHOD method)
+	template<typename TMETHOD>
+	void signal<TARGS...>::disconnect(TMETHOD method)
 	{
-		std::erase_if(m_slots, [method](const priv::delegate<TARGS...>& slot)
+		std::erase_if(m_slots, [method](const priv::slot<TARGS...>& slot)
 		{
-			return slot.m_id.function == typeid(method).hash_code();
+			return slot.m_info.function == typeid(method).hash_code();
 		});
 	}
 
