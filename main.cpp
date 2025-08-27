@@ -61,6 +61,9 @@ int main()
 	std::thread t(thread_loop);
 	MyButton button1("MyButton1");
 	CopyMe c;
+
+	std::cout << sizeof(std::shared_mutex) << std::endl;
+
 	sisl::connect(button1, &MyButton::onClick, test, &TEST::func, t.get_id());
 	sisl::disconnect(button1, &MyButton::onClick, test, &TEST::func);
 	sisl::disconnect(button1, &MyButton::onClick, &TEST::func);

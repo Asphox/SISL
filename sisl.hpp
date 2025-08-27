@@ -748,7 +748,16 @@ namespace SISL_NAMESPACE
 		requires (std::is_member_function_pointer_v<TMETHOD>)
 		friend void disconnect(signal<UARGS...>&, TMETHOD);
 		
-		std::vector<priv::slot<TARGS...>> m_slots;
+		// Slots are stored within a unique_ptr because it's much smaller than a full vector
+		std::unique_ptr<std::vector<priv::slot<TARGS...>>> m_slots;
+
+		inline void init_slots_vector_if_necessary()
+		{
+			if (!m_slots)
+			{
+				m_slots = std::make_unique<std::vector<priv::slot<TARGS...>>>();
+			}
+		}
 	};
 }
 
@@ -854,14 +863,15 @@ namespace SISL_NAMESPACE
 	requires priv::COMPATIBLE_METHOD_OF<TMETHOD, TINSTANCE, TARGS...>
 	void signal<TARGS...>::connect(void* owner, TINSTANCE& instance, TMETHOD method, std::thread::id thread_affinity, type_connection type)
 	{
+		init_slots_vector_if_necessary();
 		const priv::delegate_info info = { owner, reinterpret_cast<intptr_t>(&instance), typeid(method).hash_code(), thread_affinity, type };
 		if (type & type_connection::unique)
 		{
-			const auto it = std::find_if(m_slots.begin(), m_slots.end(), [&info](const priv::slot<TARGS...>& slot)
+			const auto it = std::find_if(m_slots->begin(), m_slots->end(), [&info](const priv::slot<TARGS...>& slot)
 			{
 				return slot.get_info().object == info.object && slot.get_info().function == info.function;
 			});
-			if (it != m_slots.end())
+			if (it != m_slots->end())
 			{
 				// If the slot already exists, we do not add it again
 				return;
@@ -887,7 +897,7 @@ namespace SISL_NAMESPACE
 						return false; // Instance is no longer valid
 					}
 				};
-				m_slots.emplace_back(std::move(callee), info);
+				m_slots->emplace_back(std::move(callee), info);
 				return;
 			}
 		}
@@ -897,7 +907,7 @@ namespace SISL_NAMESPACE
 			(instance.*method)(std::forward<TARGS>(args)...);
 			return true; // Indicates successful call
 		};
-		m_slots.emplace_back(std::move(callee), info);
+		m_slots->emplace_back(std::move(callee), info);
 	}
 
 	template<typename... TARGS>
@@ -905,14 +915,15 @@ namespace SISL_NAMESPACE
 	requires (priv::COMPATIBLE_FUNCTOR<TFUNCTOR, TARGS...>)
 	void signal<TARGS...>::connect(void* owner, TFUNCTOR&& functor, std::thread::id thread_affinity, type_connection type)
 	{
+		init_slots_vector_if_necessary();
 		const priv::delegate_info info = { owner, reinterpret_cast<intptr_t>(&functor), 0, thread_affinity, type };
 		if (type & type_connection::unique)
 		{
-			const auto it = std::find_if(m_slots.begin(), m_slots.end(), [&info](const priv::slot<TARGS...>& slot)
+			const auto it = std::find_if(m_slots->begin(), m_slots->end(), [&info](const priv::slot<TARGS...>& slot)
 			{
 				return slot.get_info().object == info.object && slot.get_info().function == 0;
 			});
-			if (it != m_slots.end())
+			if (it != m_slots->end())
 			{
 				// If the slot already exists, we do not add it again
 				return;
@@ -923,7 +934,7 @@ namespace SISL_NAMESPACE
 			functor(std::forward<TARGS>(args)...);
 			return true; // Indicates successful calls
 		};
-		m_slots.emplace_back(std::move(callee), info);
+		m_slots->emplace_back(std::move(callee), info);
 	}
 
 	template<typename... TARGS>
@@ -931,14 +942,15 @@ namespace SISL_NAMESPACE
 	requires (priv::COMPATIBLE_FUNCTION<TFUNCTION, TARGS...>)
 	void signal<TARGS...>::connect(void* owner, TFUNCTION&& function, std::thread::id thread_affinity, type_connection type)
 	{
+		init_slots_vector_if_necessary();
 		const priv::delegate_info info = { owner, reinterpret_cast<intptr_t>(&function), 0, thread_affinity, type };
 		if (type & type_connection::unique)
 		{
-			const auto it = std::find_if(m_slots.begin(), m_slots.end(), [&info](const priv::slot<TARGS...>& slot)
+			const auto it = std::find_if(m_slots->begin(), m_slots->end(), [&info](const priv::slot<TARGS...>& slot)
 			{
 				return slot.get_info().object == info.object && slot.get_info().function == 0;
 			});
-			if (it != m_slots.end())
+			if (it != m_slots->end())
 			{
 				// If the slot already exists, we do not add it again
 				return;
@@ -949,20 +961,22 @@ namespace SISL_NAMESPACE
 			function(std::forward<TARGS>(args)...);
 			return true; // Indicates successful call
 		};
-		m_slots.emplace_back(std::move(callee), info);
+		m_slots->emplace_back(std::move(callee), info);
 	}
 	
 	template<typename... TARGS>
 	void signal<TARGS...>::disconnect_all()
 	{
-		m_slots.clear();
+		init_slots_vector_if_necessary();
+		m_slots->clear();
 	}
 
 	template<typename... TARGS>
 	template<typename TINSTANCE, typename TMETHOD>
 	void signal<TARGS...>::disconnect(TINSTANCE& instance, TMETHOD method)
 	{
-		std::erase_if(m_slots, [&instance, method](const priv::slot<TARGS...>& slot)
+		init_slots_vector_if_necessary();
+		std::erase_if(*m_slots, [&instance, method](const priv::slot<TARGS...>& slot)
 		{
 			return slot.m_info.object == reinterpret_cast<intptr_t>(&instance) && slot.m_info.function == typeid(method).hash_code();
 		});
@@ -972,7 +986,8 @@ namespace SISL_NAMESPACE
 	template<typename TOBJECT>
 	void signal<TARGS...>::disconnect_all_from(const TOBJECT& instance)
 	{
-		std::erase_if(m_slots, [&instance](const priv::slot<TARGS...>& slot)
+		init_slots_vector_if_necessary();
+		std::erase_if(*m_slots, [&instance](const priv::slot<TARGS...>& slot)
 		{
 			return slot.m_info.object == reinterpret_cast<intptr_t>(&instance);
 		});
@@ -982,7 +997,8 @@ namespace SISL_NAMESPACE
 	template<typename TMETHOD>
 	void signal<TARGS...>::disconnect(TMETHOD method)
 	{
-		std::erase_if(m_slots, [method](const priv::slot<TARGS...>& slot)
+		init_slots_vector_if_necessary();
+		std::erase_if(*m_slots, [method](const priv::slot<TARGS...>& slot)
 		{
 			return slot.m_info.function == typeid(method).hash_code();
 		});
@@ -1008,8 +1024,9 @@ namespace SISL_NAMESPACE
 	template<typename... UARGS>
 	void signal<TARGS...>::emit_impl(UARGS&&... args)
 	{
+		init_slots_vector_if_necessary();
 		const std::thread::id current_thread = std::this_thread::get_id();
-		for (auto it = m_slots.begin(); it != m_slots.end(); )
+		for (auto it = m_slots->begin(); it != m_slots->end(); )
 		{
 			auto& slot = *it;
 			const priv::delegate_info& info = slot.get_info();
@@ -1029,7 +1046,7 @@ namespace SISL_NAMESPACE
 					// If we are in the same thread, with blocking_queued, we MUST throw an exception because it would cause a deadlock.
 					if (current_thread == target_thread)
 					{
-						m_slots.erase(it);
+						m_slots->erase(it);
 						throw invalid_blocking_queued_connection();
 					}
 					std::promise<void> done;
@@ -1070,7 +1087,7 @@ namespace SISL_NAMESPACE
 			}
 			// If the slot is single-shot, remove it after calling
 			if (!result || ((int)info.type & (int)type_connection::single_shot))
-				it = m_slots.erase(it);
+				it = m_slots->erase(it);
 			else
 				++it;
 		}
