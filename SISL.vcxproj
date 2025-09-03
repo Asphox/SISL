@@ -135,10 +135,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp" />
+    <ClCompile Include="TESTS\tests_sisl.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="sisl.hpp" />
+    <ClInclude Include="TESTS\doctest.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

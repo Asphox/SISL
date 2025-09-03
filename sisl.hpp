@@ -161,11 +161,13 @@ namespace SISL_NAMESPACE
 	/**
 	* @brief Terminates the SISL polling mechanism.
 	* 
-	* This function stops the SISL polling mechanism, preventing any further slots from being invoked in any thread.
-	* It is typically called when the application is shutting down to unlock all blocking polling or polling with long timeout.
-	* This operation is irreversible.
+	* @param id Optional id of the thread's polling to terminate (if default: applies on all threads)
+	* 
+	* This function stops the SISL polling mechanism, preventing any further slots from being invoked in this thread.
+	* It is typically called when the application is shutting down or a thread is dying to unlock all blocking polling or polling with long timeout.
+	* This operation is irreversible for a given thread.
 	*/
-	void terminate();
+	void terminate(std::thread::id id = std::thread::id());
 
 	/**
 	* @class invalid_blocking_queued_connection
@@ -204,6 +206,31 @@ namespace SISL_NAMESPACE
 	#define __SISL_STRINGIFY_DEFINE(x) __SISL_STR_DEFINE(x)
 	
 	/**
+	* @class sisl::jthread
+	* @brief Helper class that works like std::jthread but calls sisl::terminate(my_thread_id) on destruction.
+	*/
+	class jthread
+	{
+	public:
+		template<typename... TARGS>
+		explicit jthread(TARGS&&... args)
+			: m_thread(std::forward<TARGS>(args)...) {}
+		~jthread() { sisl::terminate(get_id()); }
+
+		jthread(const jthread&) = delete;
+		jthread& operator=(const jthread&) = delete;
+		jthread(jthread&& other) noexcept = default;
+		jthread& operator=(jthread&& other) noexcept = default;
+
+		inline void join() { m_thread.join(); }
+		inline std::thread::id get_id() const noexcept { return m_thread.get_id(); }
+		inline bool joinable() const noexcept { return m_thread.joinable(); }
+		inline bool request_stop() noexcept { sisl::terminate(get_id());  m_thread.request_stop(); }
+	private:
+		std::jthread m_thread;
+	};
+
+	/**
 	 * @enum type_connection
 	 * @brief Defines the type of connection for signal-slot mechanisms.
 	 *
@@ -222,6 +249,10 @@ namespace SISL_NAMESPACE
 	constexpr type_connection get_type_connection_without_flags(type_connection type) noexcept
 	{
 		return static_cast<type_connection>(static_cast<std::underlying_type_t<type_connection>>(type) & 0x3F);
+	}
+	constexpr bool is_type_connection_queued(type_connection type) noexcept
+	{
+		return get_type_connection_without_flags(type) == type_connection::queued || get_type_connection_without_flags(type) == type_connection::blocking_queued;
 	}
 	
 	namespace priv
@@ -356,6 +387,13 @@ namespace SISL_NAMESPACE
 		}
 		&& tuple_is_static_castable_v<typename function_traits<Function>::argument_types, TArgs...>;
 
+		template <typename T>
+		struct is_shared_ptr : std::false_type {};
+		template <typename T>
+		struct is_shared_ptr<std::shared_ptr<T>> : std::true_type {};
+		template <typename T>
+		inline constexpr bool is_shared_ptr_v = is_shared_ptr<T>::value;
+
 		consteval std::thread::id get_empty_thread_id() noexcept { return std::thread::id(); }
 		struct delegate_info
 		{
@@ -363,7 +401,7 @@ namespace SISL_NAMESPACE
 			intptr_t		object;
 			std::size_t		function;
 			std::thread::id thread_affinity;
-			type_connection	type;
+			type_connection	type = automatic;
 		};
 
 		// We can't rely on std::function for delegate storage because perfect forwarding is not possible with it (and so causes undesired copies)
@@ -408,14 +446,14 @@ namespace SISL_NAMESPACE
 				m_deleter(m_storage.data());
 			}
 
-			TRETURN operator()(TARGS... args) const
+			TRETURN operator()(TARGS... args)
 			{
-				return m_invoker(const_cast<void*>(reinterpret_cast<const void*>(m_storage.data())), std::forward<TARGS>(args)...);
+				return m_invoker(m_storage.data(), std::forward<TARGS>(args)...);
 			}
 		};
 
 		template<typename... TARGS>
-		using delegate = delegate_impl<bool(TARGS&&...)>;
+		using delegate = delegate_impl<bool(TARGS...)>;
 
 		template<typename... TARGS>
 		class slot
@@ -427,22 +465,32 @@ namespace SISL_NAMESPACE
 				m_info = info;
 			}
 
+			slot(slot&& src) noexcept
+			{
+				m_callee = std::move(src.m_callee);
+				m_info = src.m_info;
+			}
+
+			slot(const slot& src)
+			{
+				m_callee = src.m_callee;
+				m_info = src.m_info;
+			}
+
 			const delegate_info& get_info() const
 			{
 				return m_info;
 			}
 
-			template<typename... UARGS>
-			inline bool operator()(UARGS&&... args)
+			inline bool operator()(TARGS... args)
 			{
-				return call_impl(std::forward<UARGS>(args)...);
+				return call_impl(args...);
 			}
 
 			// Perfect forwarding for any type of arguments (lvalue, rvalue, const, non-const)
-			template<typename... UARGS>
-			inline bool call_impl(UARGS&&... args)
+			inline bool call_impl(TARGS... args)
 			{
-				return m_callee(static_cast<TARGS&&>(args)...);
+				return m_callee(args...);
 			}
 
 			delegate<TARGS...> m_callee;
@@ -468,7 +516,10 @@ namespace SISL_NAMESPACE
 	* @param type Connection type (default is automatic).
 	*/
 	template<typename...TARGS, typename TOWNER, typename TINSTANCE, typename TMETHOD>
-	void connect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, TINSTANCE& instance, TMETHOD method, std::thread::id thread_id = std::thread::id(), type_connection type = type_connection::automatic);
+	void connect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, TINSTANCE& instance, TMETHOD method, std::thread::id thread_id = std::thread::id(), type_connection type = type_connection::automatic)
+	{
+		(owner.*signal).connect(&owner, instance, method, thread_id, type);
+	}
 
 	/**
 	* @brief Connects a member function to a standalone signal.
@@ -480,7 +531,10 @@ namespace SISL_NAMESPACE
 	* @param type Connection type (default is automatic).
 	*/
 	template<typename...TARGS, typename TINSTANCE, typename TMETHOD>
-	void connect(signal<TARGS...>& signal, TINSTANCE& instance, TMETHOD method, std::thread::id thread_id = std::thread::id(), type_connection type = type_connection::automatic);
+	void connect(signal<TARGS...>& signal, TINSTANCE& instance, TMETHOD method, std::thread::id thread_id = std::thread::id(), type_connection type = type_connection::automatic)
+	{
+		signal.connect(nullptr, instance, method, thread_id, type);
+	}
 
 	/**
 	* @brief Connects a generic callable object (e.g. lambda, functor) to a member signal.
@@ -493,7 +547,10 @@ namespace SISL_NAMESPACE
 	*/
 	template<typename...TARGS, typename TOWNER, typename TFUNCTOR>
 	requires (priv::COMPATIBLE_FUNCTOR<TFUNCTOR, TARGS...>)
-	void connect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, TFUNCTOR&& functor, std::thread::id thread_id = std::thread::id(), type_connection type = type_connection::automatic);
+	void connect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, TFUNCTOR&& functor, std::thread::id thread_id = std::thread::id(), type_connection type = type_connection::automatic)
+	{
+		(owner.*signal).connect(&owner, std::forward<TFUNCTOR>(functor), thread_id, type);
+	}
 
 	/**
 	* @brief Connects a generic callable object (e.g. lambda, functor) to a standalone signal.
@@ -505,7 +562,10 @@ namespace SISL_NAMESPACE
 	*/
 	template<typename...TARGS, typename TFUNCTOR>
 	requires (priv::COMPATIBLE_FUNCTOR<TFUNCTOR, TARGS...>)
-	void connect(signal<TARGS...>& signal, TFUNCTOR&& functor, std::thread::id thread_id = std::thread::id(), type_connection type = type_connection::automatic);
+	void connect(signal<TARGS...>& signal, TFUNCTOR&& functor, std::thread::id thread_id = std::thread::id(), type_connection type = type_connection::automatic)
+	{
+		signal.connect(nullptr, std::forward<TFUNCTOR>(functor), thread_id, type);
+	}
 
 	/**
 	* @brief Connects a C/static function to a member signal.
@@ -518,7 +578,10 @@ namespace SISL_NAMESPACE
 	*/
 	template<typename...TARGS, typename TOWNER, typename TFUNCTION>
 	requires (priv::COMPATIBLE_FUNCTION<TFUNCTION, TARGS...>)
-	void connect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, TFUNCTION&& function, std::thread::id thread_id = std::thread::id(), type_connection type = type_connection::automatic);
+	void connect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, TFUNCTION&& function, std::thread::id thread_id = std::thread::id(), type_connection type = type_connection::automatic)
+	{
+		(owner.*signal).connect(&owner, std::forward<TFUNCTION>(function), thread_id, type);
+	}
 
 	/**
 	* @brief Connects a C/static function to a standalone signal.
@@ -530,7 +593,10 @@ namespace SISL_NAMESPACE
 	*/
 	template<typename...TARGS, typename TFUNCTION>
 	requires (priv::COMPATIBLE_FUNCTION<TFUNCTION, TARGS...>)
-	void connect(signal<TARGS...>& signal, TFUNCTION&& function, std::thread::id thread_id = std::thread::id(), type_connection type = type_connection::automatic);
+	void connect(signal<TARGS...>& signal, TFUNCTION&& function, std::thread::id thread_id = std::thread::id(), type_connection type = type_connection::automatic)
+	{
+		signal.connect(nullptr, std::forward<TFUNCTION>(function), thread_id, type);
+	}
 
 	/**
 	* @brief Disconnects all slots connected to this member signal.
@@ -539,7 +605,10 @@ namespace SISL_NAMESPACE
 	* @param signal Member address of the signal (exemple : &COwner::my_signal)
 	*/
 	template <typename...TARGS, typename TOWNER>
-	void disconnect_all(TOWNER& owner, signal<TARGS...> TOWNER::* signal);
+	void disconnect_all(TOWNER& owner, signal<TARGS...> TOWNER::* signal)
+	{
+		(owner.*signal).disconnect_all();
+	}
 
 	/**
 	* @brief Disconnects all slots connected to the signal.
@@ -547,7 +616,10 @@ namespace SISL_NAMESPACE
 	* @param signal Reference to the signal.
 	*/
 	template<typename...TARGS>
-	void disconnect_all(signal<TARGS...>& signal);
+	void disconnect_all(signal<TARGS...>& signal)
+	{
+		signal.disconnect_all();
+	}
 
 	/**
 	* @brief Disconnects a specific slot connected to this member signal.
@@ -558,7 +630,10 @@ namespace SISL_NAMESPACE
 	* @param method Pointer to the member function.
 	*/
 	template<typename... TARGS, typename TOWNER, typename TINSTANCE, typename TMETHOD>
-	void disconnect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, const TINSTANCE& instance, TMETHOD method);
+	void disconnect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, const TINSTANCE& instance, TMETHOD method)
+	{
+		(owner.*signal).disconnect(instance, method);
+	}
 
 	/**
 	* @brief Disconnects a specific slot connected to this signal.
@@ -568,7 +643,10 @@ namespace SISL_NAMESPACE
 	* @param method Pointer to the member function.
 	*/
 	template<typename... TARGS, typename TINSTANCE, typename TMETHOD>
-	void disconnect(signal<TARGS...>& signal, const TINSTANCE& instance, TMETHOD method);
+	void disconnect(signal<TARGS...>& signal, const TINSTANCE& instance, TMETHOD method)
+	{
+		signal.disconnect(instance, method);
+	}
 
 	/**
 	* @brief Disconnects all slots owned by an object from this member signal.
@@ -578,7 +656,11 @@ namespace SISL_NAMESPACE
 	* @param object Reference to the object whose slots should be disconnected.
 	*/
 	template<typename... TARGS, typename TOWNER, typename TOBJECT>
-	void disconnect_all_from(TOWNER& owner, signal<TARGS...> TOWNER::* signal, const TOBJECT& object);
+	requires (!std::is_member_function_pointer_v<TOBJECT>)
+	void disconnect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, const TOBJECT& object)
+	{
+		(owner.*signal).disconnect(object);
+	}
 
 	/**
 	* @brief Disconnects all slots owned by an object from this signal.
@@ -587,7 +669,11 @@ namespace SISL_NAMESPACE
 	* @param object Reference to the object whose slots should be disconnected.
 	*/
 	template<typename... TARGS, typename TOBJECT>
-	void disconnect_all_from(signal<TARGS...>& signal, const TOBJECT& object);
+	requires (!std::is_member_function_pointer_v<TOBJECT>)
+	void disconnect(signal<TARGS...>& signal, const TOBJECT& object)
+	{
+		signal.disconnect(object);
+	}
 
 	/**
 	* @brief Disconnects all slots relying on a specific method from this member signal.
@@ -598,7 +684,10 @@ namespace SISL_NAMESPACE
 	*/
 	template<typename... TARGS, typename TOWNER, typename TMETHOD>
 	requires (std::is_member_function_pointer_v<TMETHOD>)
-	void disconnect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, TMETHOD method);
+	void disconnect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, TMETHOD method)
+	{
+		(owner.*signal).disconnect(method);
+	}
 
 	/**
 	* @brief Disconnects all slots relying on a specific method from this signal.
@@ -608,7 +697,13 @@ namespace SISL_NAMESPACE
 	*/
 	template<typename... TARGS, typename TMETHOD>
 	requires (std::is_member_function_pointer_v<TMETHOD>)
-	void disconnect(signal<TARGS...>& signal, TMETHOD method);
+	void disconnect(signal<TARGS...>& signal, TMETHOD method)
+	{
+		signal.disconnect(method);
+	}
+
+	template<typename T>
+	using lvalue_reference_if_value_t = std::conditional_t<std::is_reference_v<T>, T, const T&>;
 
 	/**
 	* @class signal
@@ -658,7 +753,20 @@ namespace SISL_NAMESPACE
 
 		template<typename TINSTANCE, typename TMETHOD>
 		requires priv::COMPATIBLE_METHOD_OF<TMETHOD, TINSTANCE, TARGS...>
-		void connect(void* owner, TINSTANCE& instance, TMETHOD method, std::thread::id thread_affinity, type_connection type);
+		void connect(void* owner, TINSTANCE& instance, TMETHOD method, std::thread::id thread_affinity, type_connection type)
+		{
+			connect_to_instance_impl(owner, instance, method, thread_affinity, type);
+		}
+
+		template<typename TINSTANCE, typename TMETHOD>
+		requires priv::COMPATIBLE_METHOD_OF<TMETHOD, TINSTANCE, TARGS...>
+		void connect(void* owner, std::shared_ptr<TINSTANCE>& instance, TMETHOD method, std::thread::id thread_affinity, type_connection type)
+		{
+			connect_to_instance_impl(owner, instance, method, thread_affinity, type);
+		}
+
+		template<typename TINSTANCE, typename TMETHOD>
+		void connect_to_instance_impl(void* owner, TINSTANCE& instance, TMETHOD method, std::thread::id thread_affinity, type_connection type);
 
 		template<typename TFUNCTOR>
 		requires (priv::COMPATIBLE_FUNCTOR<TFUNCTOR, TARGS...>)
@@ -695,9 +803,11 @@ namespace SISL_NAMESPACE
 		void disconnect(TINSTANCE& instance, TMETHOD method);
 
 		template<typename TOBJECT>
-		void disconnect_all_from(const TOBJECT& instance);
+		requires (!std::is_member_function_pointer_v<TOBJECT>)
+		void disconnect(const TOBJECT& instance);
 
 		template<typename TMETHOD>
+		requires (std::is_member_function_pointer_v<TMETHOD>)
 		void disconnect(TMETHOD method);
 
 		template<typename... UARGS, typename TOWNER, typename TINSTANCE, typename TMETHOD>
@@ -722,12 +832,6 @@ namespace SISL_NAMESPACE
 		requires (priv::COMPATIBLE_FUNCTION<TFUNCTION, UARGS...>)
 		friend void connect(signal<UARGS...>&, TFUNCTION&&, std::thread::id, type_connection);
 
-		template<typename... UARGS, typename TOWNER>
-		friend void disconnect_all(TOWNER&, signal<UARGS...> TOWNER::*);
-
-		template<typename... UARGS>
-		friend void disconnect_all(signal<UARGS...>&);
-
 		template<typename... UARGS, typename TOWNER, typename TINSTANCE, typename TMETHOD>
 		friend void disconnect(TOWNER&, signal<UARGS...> TOWNER::*, const TINSTANCE&, TMETHOD);
 
@@ -735,10 +839,12 @@ namespace SISL_NAMESPACE
 		friend void disconnect(signal<UARGS...>&, const TINSTANCE&, TMETHOD);
 
 		template<typename... UARGS, typename TOWNER, typename TOBJECT>
-		friend void disconnect_all_from(TOWNER&, signal<UARGS...> TOWNER::*, const TOBJECT&);
+		requires (!std::is_member_function_pointer_v<TOBJECT>)
+		friend void disconnect(TOWNER&, signal<UARGS...> TOWNER::*, const TOBJECT&);
 
 		template<typename... UARGS, typename TOBJECT>
-		friend void disconnect_all_from(signal<UARGS...>&, const TOBJECT&);
+		requires (!std::is_member_function_pointer_v<TOBJECT>)
+		friend void disconnect(signal<UARGS...>&, const TOBJECT&);
 
 		template<typename... UARGS, typename TOWNER, typename TMETHOD>
 		requires (std::is_member_function_pointer_v<TMETHOD>)
@@ -747,15 +853,26 @@ namespace SISL_NAMESPACE
 		template<typename... UARGS, typename TMETHOD>
 		requires (std::is_member_function_pointer_v<TMETHOD>)
 		friend void disconnect(signal<UARGS...>&, TMETHOD);
+
+		template <typename... UARGS, typename TOWNER>
+		friend void disconnect_all(TOWNER&, signal<UARGS...> TOWNER::*);
+
+		template<typename... UARGS>
+		friend void disconnect_all(signal<UARGS...>&);
 		
 		// Slots are stored within a unique_ptr because it's much smaller than a full vector
-		std::unique_ptr<std::vector<priv::slot<TARGS...>>> m_slots;
+		std::unique_ptr<std::vector<std::shared_ptr<priv::slot< lvalue_reference_if_value_t<TARGS>... >>>> m_slots;
+		// Mutex for the slots vector
+		mutable std::shared_mutex m_mtx;
 
-		inline void init_slots_vector_if_necessary()
+		void init_slots_vector_if_necessary()
 		{
+			std::shared_lock lock_slots_read(m_mtx);
 			if (!m_slots)
 			{
-				m_slots = std::make_unique<std::vector<priv::slot<TARGS...>>>();
+				lock_slots_read.unlock();
+				std::unique_lock lock_slots_write(m_mtx);
+				m_slots = std::make_unique<std::vector<std::shared_ptr<priv::slot<lvalue_reference_if_value_t<TARGS>...>>>>();
 			}
 		}
 	};
@@ -767,109 +884,17 @@ namespace SISL_NAMESPACE
 
 namespace SISL_NAMESPACE
 {
-	template<typename...TARGS, typename TOWNER, typename TINSTANCE, typename TMETHOD>
-	void connect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, TINSTANCE& instance, TMETHOD method, std::thread::id thread_id, type_connection type)
-	{
-		(owner.*signal).connect(&owner, instance, method, thread_id, type);
-	}
-
-	template<typename...TARGS, typename TINSTANCE, typename TMETHOD>
-	void connect(signal<TARGS...>& signal, TINSTANCE& instance, TMETHOD method, std::thread::id thread_id, type_connection type)
-	{
-		signal.connect(nullptr, instance, method, thread_id, type);
-	}
-
-	template<typename...TARGS, typename TOWNER, typename TFUNCTOR>
-	requires (priv::COMPATIBLE_FUNCTOR<TFUNCTOR, TARGS...>)
-	void connect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, TFUNCTOR&& functor, std::thread::id thread_id, type_connection type)
-	{
-		(owner.*signal).connect(&owner, std::forward<TFUNCTOR>(functor), thread_id, type);
-	}
-
-	template<typename...TARGS, typename TFUNCTOR>
-	requires (priv::COMPATIBLE_FUNCTOR<TFUNCTOR, TARGS...>)
-	void connect(signal<TARGS...>& signal, TFUNCTOR&& functor, std::thread::id thread_id, type_connection type)
-	{
-		signal.connect(nullptr, std::forward<TFUNCTOR>(functor), thread_id, type);
-	}
-
-	template<typename...TARGS, typename TOWNER, typename TFUNCTION>
-	requires (priv::COMPATIBLE_FUNCTION<TFUNCTION, TARGS...>)
-	void connect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, TFUNCTION&& function, std::thread::id thread_id, type_connection type)
-	{
-		(owner.*signal).connect(&owner, std::forward<TFUNCTION>(function), thread_id, type);
-	}
-
-	template<typename...TARGS, typename TFUNCTION>
-	requires (priv::COMPATIBLE_FUNCTION<TFUNCTION, TARGS...>)
-	void connect(signal<TARGS...>& signal, TFUNCTION&& function, std::thread::id thread_id, type_connection type)
-	{
-		signal.connect(nullptr, std::forward<TFUNCTION>(function), thread_id, type);
-	}
-
-	template <typename...TARGS, typename TOWNER>
-	void disconnect_all(TOWNER& owner, signal<TARGS...> TOWNER::* signal)
-	{
-		(owner.*signal).disconnect_all();
-	}
-
-	template<typename...TARGS>
-	void disconnect_all(signal<TARGS...>& signal)
-	{
-		signal.disconnect_all();
-	}
-
-	template<typename... TARGS, typename TOWNER, typename TINSTANCE, typename TMETHOD>
-	void disconnect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, const TINSTANCE& instance, TMETHOD method)
-	{
-		(owner.*signal).disconnect(instance, method);
-	}
-
-	template<typename... TARGS, typename TINSTANCE, typename TMETHOD>
-	void disconnect(signal<TARGS...>& signal, const TINSTANCE& instance, TMETHOD method)
-	{
-		signal.disconnect(instance, method);
-	}
-
-	template<typename... TARGS, typename TOWNER, typename TOBJECT>
-	void disconnect_all_from(TOWNER& owner, signal<TARGS...> TOWNER::* signal, const TOBJECT& object)
-	{
-		(owner.*signal).disconnect_all_from(object);
-	}
-
-	template<typename... TARGS, typename TOBJECT>
-	void disconnect_all_from(signal<TARGS...>& signal, const TOBJECT& object)
-	{
-		signal.disconnect_all_from(object);
-	}
-
-	template<typename... TARGS, typename TOWNER, typename TMETHOD>
-	requires (std::is_member_function_pointer_v<TMETHOD>)
-	void disconnect(TOWNER& owner, signal<TARGS...> TOWNER::* signal, TMETHOD method)
-	{
-		(owner.*signal).disconnect(method);
-	}
-
-	template<typename... TARGS, typename TMETHOD>
-	requires (std::is_member_function_pointer_v<TMETHOD>)
-	void disconnect(signal<TARGS...>& signal, TMETHOD method)
-	{
-		signal.disconnect(method);
-	}
-
-
 	template<typename... TARGS>
 	template<typename TINSTANCE, typename TMETHOD>
-	requires priv::COMPATIBLE_METHOD_OF<TMETHOD, TINSTANCE, TARGS...>
-	void signal<TARGS...>::connect(void* owner, TINSTANCE& instance, TMETHOD method, std::thread::id thread_affinity, type_connection type)
+	void signal<TARGS...>::connect_to_instance_impl(void* owner, TINSTANCE& instance, TMETHOD method, std::thread::id thread_affinity, type_connection type)
 	{
 		init_slots_vector_if_necessary();
 		const priv::delegate_info info = { owner, reinterpret_cast<intptr_t>(&instance), typeid(method).hash_code(), thread_affinity, type };
 		if (type & type_connection::unique)
 		{
-			const auto it = std::find_if(m_slots->begin(), m_slots->end(), [&info](const priv::slot<TARGS...>& slot)
+			const auto it = std::find_if(m_slots->begin(), m_slots->end(), [&info](const std::shared_ptr<priv::slot<lvalue_reference_if_value_t<TARGS>...>>& slot)
 			{
-				return slot.get_info().object == info.object && slot.get_info().function == info.function;
+				return slot->get_info().object == info.object && slot->get_info().function == info.function;
 			});
 			if (it != m_slots->end())
 			{
@@ -877,19 +902,24 @@ namespace SISL_NAMESPACE
 				return;
 			}
 		}
-		// if the target instance is a sisl::generic_object, we may have more secure delegate to create
-		if constexpr (priv::has_weak_from_this<TINSTANCE>)
+
+		// if the target instance is managed by shared_ptr, we may have more secure delegate to create
+		if constexpr (priv::has_weak_from_this<TINSTANCE> || priv::is_shared_ptr_v<std::decay_t<TINSTANCE>>)
 		{
-			// if we can get a weak_ptr on the instance, then the instance is managed by a shared_ptr
-			// we can use a safe code for the delegate
-			auto weak_instance = instance.weak_from_this();
+			auto weak_instance = [&]() 
+			{
+				if constexpr (priv::is_shared_ptr_v<std::decay_t<TINSTANCE>>) 
+					return std::weak_ptr(instance);
+				else 
+					return instance.weak_from_this();
+			}();
 			if (!weak_instance.expired())
 			{
 				auto callee = [weak_instance, method](auto&&... args) -> bool
 				{
 					if (auto shared_instance = weak_instance.lock())
 					{
-						(static_cast<TINSTANCE*>(shared_instance.get())->*method)(std::forward<TARGS>(args)...);
+						(shared_instance.get()->*method)(args...);
 						return true; // Indicates successful call
 					}
 					else
@@ -897,17 +927,25 @@ namespace SISL_NAMESPACE
 						return false; // Instance is no longer valid
 					}
 				};
-				m_slots->emplace_back(std::move(callee), info);
+				auto sp_callee = std::make_shared<priv::slot<lvalue_reference_if_value_t<TARGS>...>>(std::move(callee), info);
+				std::unique_lock lock_slots(m_mtx);
+				m_slots->emplace_back(std::move(sp_callee));
 				return;
 			}
+			return;
 		}
-		// otherwise we just call the method, no check
-		auto callee = [&instance, method](auto&&... args) -> bool
+		else
 		{
-			(instance.*method)(std::forward<TARGS>(args)...);
-			return true; // Indicates successful call
-		};
-		m_slots->emplace_back(std::move(callee), info);
+			// otherwise we just call the method, no check
+			auto callee = [&instance, method](auto&&... args) -> bool
+			{
+				(instance.*method)(args...);
+				return true; // Indicates successful call
+			};
+			auto sp_callee = std::make_shared<priv::slot<lvalue_reference_if_value_t<TARGS>...>>(std::move(callee), info);
+			std::unique_lock lock_slots(m_mtx);
+			m_slots->emplace_back(std::move(sp_callee));
+		}
 	}
 
 	template<typename... TARGS>
@@ -919,9 +957,9 @@ namespace SISL_NAMESPACE
 		const priv::delegate_info info = { owner, reinterpret_cast<intptr_t>(&functor), 0, thread_affinity, type };
 		if (type & type_connection::unique)
 		{
-			const auto it = std::find_if(m_slots->begin(), m_slots->end(), [&info](const priv::slot<TARGS...>& slot)
+			const auto it = std::find_if(m_slots->begin(), m_slots->end(), [&info](const std::shared_ptr<priv::slot<lvalue_reference_if_value_t<TARGS>...>>& slot)
 			{
-				return slot.get_info().object == info.object && slot.get_info().function == 0;
+				return slot->get_info().object == info.object && slot->get_info().function == 0;
 			});
 			if (it != m_slots->end())
 			{
@@ -929,12 +967,14 @@ namespace SISL_NAMESPACE
 				return;
 			}
 		}
-		auto callee = [functor](auto&&... args)->bool
+		auto callee = [functor](auto&&... args) -> bool
 		{
-			functor(std::forward<TARGS>(args)...);
+			functor(args...);
 			return true; // Indicates successful calls
 		};
-		m_slots->emplace_back(std::move(callee), info);
+		auto sp_callee = std::make_shared<priv::slot<lvalue_reference_if_value_t<TARGS>...>>(std::move(callee), info);
+		std::unique_lock lock_slots(m_mtx);
+		m_slots->emplace_back(std::move(sp_callee));
 	}
 
 	template<typename... TARGS>
@@ -946,9 +986,9 @@ namespace SISL_NAMESPACE
 		const priv::delegate_info info = { owner, reinterpret_cast<intptr_t>(&function), 0, thread_affinity, type };
 		if (type & type_connection::unique)
 		{
-			const auto it = std::find_if(m_slots->begin(), m_slots->end(), [&info](const priv::slot<TARGS...>& slot)
+			const auto it = std::find_if(m_slots->begin(), m_slots->end(), [&info](const std::shared_ptr<priv::slot<lvalue_reference_if_value_t<TARGS>...>>& slot)
 			{
-				return slot.get_info().object == info.object && slot.get_info().function == 0;
+				return slot->get_info().object == info.object && slot->get_info().function == 0;
 			});
 			if (it != m_slots->end())
 			{
@@ -956,18 +996,22 @@ namespace SISL_NAMESPACE
 				return;
 			}
 		}
+
 		auto callee = [function](auto&&... args)->bool
 		{
-			function(std::forward<TARGS>(args)...);
+			function(args...);
 			return true; // Indicates successful call
 		};
-		m_slots->emplace_back(std::move(callee), info);
+		auto sp_callee = std::make_shared<priv::slot<lvalue_reference_if_value_t<TARGS>...>>(std::move(callee), info);
+		std::unique_lock lock_slots(m_mtx);
+		m_slots->emplace_back(std::move(sp_callee));
 	}
 	
 	template<typename... TARGS>
 	void signal<TARGS...>::disconnect_all()
 	{
 		init_slots_vector_if_necessary();
+		std::unique_lock lock_slots(m_mtx);
 		m_slots->clear();
 	}
 
@@ -976,31 +1020,36 @@ namespace SISL_NAMESPACE
 	void signal<TARGS...>::disconnect(TINSTANCE& instance, TMETHOD method)
 	{
 		init_slots_vector_if_necessary();
-		std::erase_if(*m_slots, [&instance, method](const priv::slot<TARGS...>& slot)
+		std::unique_lock lock_slots(m_mtx);
+		std::erase_if(*m_slots, [&instance, method](const std::shared_ptr<priv::slot<lvalue_reference_if_value_t<TARGS>...>>& slot)
 		{
-			return slot.m_info.object == reinterpret_cast<intptr_t>(&instance) && slot.m_info.function == typeid(method).hash_code();
+			return slot->m_info.object == reinterpret_cast<intptr_t>(&instance) && slot->m_info.function == typeid(method).hash_code();
 		});
 	}
 
 	template<typename... TARGS>
 	template<typename TOBJECT>
-	void signal<TARGS...>::disconnect_all_from(const TOBJECT& instance)
+	requires (!std::is_member_function_pointer_v<TOBJECT>)
+	void signal<TARGS...>::disconnect(const TOBJECT& instance)
 	{
 		init_slots_vector_if_necessary();
-		std::erase_if(*m_slots, [&instance](const priv::slot<TARGS...>& slot)
+		std::unique_lock lock_slots(m_mtx);
+		std::erase_if(*m_slots, [&instance](const std::shared_ptr<priv::slot<lvalue_reference_if_value_t<TARGS>...>>& slot)
 		{
-			return slot.m_info.object == reinterpret_cast<intptr_t>(&instance);
+			return slot->m_info.object == reinterpret_cast<intptr_t>(&instance);
 		});
 	}
 
 	template<typename... TARGS>
 	template<typename TMETHOD>
+	requires (std::is_member_function_pointer_v<TMETHOD>)
 	void signal<TARGS...>::disconnect(TMETHOD method)
 	{
 		init_slots_vector_if_necessary();
-		std::erase_if(*m_slots, [method](const priv::slot<TARGS...>& slot)
+		std::unique_lock lock_slots(m_mtx);
+		std::erase_if(*m_slots, [method](const std::shared_ptr<priv::slot<lvalue_reference_if_value_t<TARGS>...>>& slot)
 		{
-			return slot.m_info.function == typeid(method).hash_code();
+			return slot->m_info.function == typeid(method).hash_code();
 		});
 	}
 
@@ -1011,14 +1060,31 @@ namespace SISL_NAMESPACE
 		emit_impl(std::forward<UARGS>(args)...);
 	}
 
-	template<typename T>
-	auto get_capturable_value(T&& arg)
-	{
-		if constexpr (std::is_reference_v<T>)
-			return std::ref(arg);
-		else
-			return std::forward<T>(arg);
-	}
+	// Custom mechanism for perfect forwarding with SISL.
+	//template<typename TSIGNALARGS, typename TEMITARGS, bool MOVE_INSTEAD_OF_COPY_IF_POSSIBLE = false>
+	//constexpr decltype(auto) forward(TEMITARGS&& arg)
+	//{
+	//	// Signal takes lvalue-ref
+	//	if constexpr (std::is_reference_v<TSIGNALARGS>)
+	//	{
+	//		return std::forward<TEMITARGS>(arg);
+	//	}
+	//	// Signal takes value
+	//	else
+	//	{
+	//		constexpr bool MOVE_INSTEAD_OF_COPY = MOVE_INSTEAD_OF_COPY_IF_POSSIBLE && std::is_move_constructible_v<TSIGNALARGS>;
+	//		// Emission has lvalue-ref ... we MUST copy !
+	//		if constexpr (!MOVE_INSTEAD_OF_COPY && std::is_lvalue_reference_v<TEMITARGS>)
+	//		{
+	//			return static_cast<TSIGNALARGS>(arg);
+	//		}
+	//		// else we CAN move !
+	//		else
+	//		{
+	//			return std::move(arg);
+	//		}
+	//	}
+	//}
 
 	template<typename... TARGS>
 	template<typename... UARGS>
@@ -1026,9 +1092,18 @@ namespace SISL_NAMESPACE
 	{
 		init_slots_vector_if_necessary();
 		const std::thread::id current_thread = std::this_thread::get_id();
-		for (auto it = m_slots->begin(); it != m_slots->end(); )
+		// Copy the slot's array before looping on it (smaller contention than keeping a read-lock during the iteration)
+		std::vector<std::shared_ptr<priv::slot<lvalue_reference_if_value_t<TARGS>...>>> slots_copy;
+		std::vector<std::shared_ptr<priv::slot<lvalue_reference_if_value_t<TARGS>...>>> slots_to_remove;
 		{
-			auto& slot = *it;
+			std::unique_lock lock_slots(m_mtx);
+			if (m_slots->empty())
+				return;
+			slots_copy = *m_slots;
+		}
+		for (auto& sp_slot : slots_copy)
+		{
+			auto& slot = *sp_slot;
 			const priv::delegate_info& info = slot.get_info();
 			const type_connection type_without_flags = get_type_connection_without_flags(info.type);
 			// Checks if the slot should be executed directly or queued
@@ -1046,17 +1121,16 @@ namespace SISL_NAMESPACE
 					// If we are in the same thread, with blocking_queued, we MUST throw an exception because it would cause a deadlock.
 					if (current_thread == target_thread)
 					{
-						m_slots->erase(it);
 						throw invalid_blocking_queued_connection();
 					}
 					std::promise<void> done;
 					auto future_done = done.get_future();
-					priv::enqueue([slot, &done, ...args_capture = get_capturable_value(std::forward<UARGS>(args))]() mutable
+					priv::enqueue([sp_slot, &done, ...args_capture = args]() mutable
 					{
-						priv::gtl_current_sender = slot.get_info().owner;
+						priv::gtl_current_sender = sp_slot->get_info().owner;
 						try
 						{
-							slot(std::move(args_capture)...);
+							(*sp_slot.get())(std::move(args_capture)...);
 							done.set_value();
 						}
 						catch (...)
@@ -1070,10 +1144,10 @@ namespace SISL_NAMESPACE
 				// If the slot is queued, we just enqueue it
 				else
 				{
-					priv::enqueue([slot, ...args_capture = get_capturable_value(std::forward<UARGS>(args))]() mutable
+					priv::enqueue([sp_slot, ...args_capture = args]() mutable
 					{
-						priv::gtl_current_sender = slot.get_info().owner;
-						slot(std::move(args_capture)...);
+						priv::gtl_current_sender = sp_slot->get_info().owner;
+						(*sp_slot.get())(std::move(args_capture)...);
 						priv::gtl_current_sender = nullptr;
 					}, target_thread);
 				}
@@ -1087,9 +1161,19 @@ namespace SISL_NAMESPACE
 			}
 			// If the slot is single-shot, remove it after calling
 			if (!result || ((int)info.type & (int)type_connection::single_shot))
-				it = m_slots->erase(it);
-			else
-				++it;
+				slots_to_remove.push_back(sp_slot);
+		}
+
+		if (!slots_to_remove.empty())
+		{
+			std::unique_lock lock(m_mtx);
+			for (const auto& sp_slot : slots_to_remove)
+			{
+				std::erase_if(*m_slots, [&sp_slot](const std::shared_ptr<priv::slot<lvalue_reference_if_value_t<TARGS>...>>& slot)
+				{
+					return slot.get() == sp_slot.get();
+				});
+			}
 		}
 	}
 
@@ -1255,6 +1339,7 @@ namespace SISL_NAMESPACE
 
 #include <condition_variable>
 #include <mutex>
+#include <optional>
 
 namespace SISL_NAMESPACE
 {
@@ -1274,6 +1359,7 @@ namespace SISL_NAMESPACE
 			lock_free_queue m_queue;
 			std::mutex m_mtx_cv;
 			std::condition_variable m_cv;
+			std::atomic_bool m_terminated;
 		};
 
 		// The thread-local async_delegates instance (signal queue) for each thread.
@@ -1310,24 +1396,35 @@ namespace SISL_NAMESPACE
 				return *new_it->second;
 			}
 
-			const std::atomic_bool& terminated() const noexcept
+			void terminates(std::thread::id id)
 			{
-				return m_terminated;
+				std::shared_lock<std::shared_mutex> read_lock(m_mutex);
+				if (id == std::thread::id())
+				{
+					for (const auto& [thread_id, delegates] : m_async_delegates)
+					{
+						delegates->m_terminated.store(true, std::memory_order_release);
+						delegates->m_cv.notify_all();
+					}
+				}
+				else
+				{
+					auto it = m_async_delegates.find(id);
+					if (it != m_async_delegates.end())
+					{
+						it->second.get()->m_terminated.store(true, std::memory_order_release);
+						it->second.get()->m_cv.notify_all();
+					}
+				}
 			}
 
-			void terminates()
+			void terminate(std::thread::id id)
 			{
-				m_terminated.store(true, std::memory_order_release);
-				std::shared_lock<std::shared_mutex> read_lock(m_mutex);
-				for (const auto& [thread_id, delegates] : m_async_delegates)
-				{
-					delegates->m_cv.notify_all();
-				}
+
 			}
 
 			std::unordered_map<std::thread::id, std::unique_ptr<async_delegates>> m_async_delegates;
 			std::shared_mutex m_mutex;
-			std::atomic_bool m_terminated{ false }; ///< Flag to indicate if the SISL mechanism is terminated.
 		};
 
 		void enqueue(std::function<void()>&& delegate, std::thread::id thread_id)
@@ -1350,38 +1447,37 @@ namespace SISL_NAMESPACE
 		auto& cv = priv::gtl_async_delegates->m_cv;
 		auto& mtx_cv = priv::gtl_async_delegates->m_mtx_cv;
 		auto& queue = priv::gtl_async_delegates->m_queue;
-		const auto& terminated = priv::hashmap_signal_queue::instance().terminated();
-		if(terminated.load(std::memory_order_acquire))
+		if(priv::gtl_async_delegates->m_terminated.load(std::memory_order_acquire))
 		{
 			return polling_result::terminated; // If SISL is terminated, we return immediately.
 		}
 		std::unique_lock<std::mutex> lock(mtx_cv);
 		if (timeout == blocking_polling)
 		{
-			cv.wait(lock, [&queue, &terminated] { return terminated.load(std::memory_order_acquire) || !queue.empty(); });
+			cv.wait(lock, [&queue] { return priv::gtl_async_delegates->m_terminated.load(std::memory_order_acquire) || !queue.empty(); });
 		}
 		else if (timeout.count() > 0)
 		{
-			cv.wait_for(lock, timeout, [&queue, &terminated] { return terminated.load(std::memory_order_acquire) || !queue.empty(); });
+			cv.wait_for(lock, timeout, [&queue] { return priv::gtl_async_delegates->m_terminated.load(std::memory_order_acquire) || !queue.empty(); });
 		}
 		if(queue.empty())
 		{
-			return terminated.load(std::memory_order_acquire) ? polling_result::terminated : polling_result::timeout;
+			return priv::gtl_async_delegates->m_terminated.load(std::memory_order_acquire) ? polling_result::terminated : polling_result::timeout;
 		}
 		while (!queue.empty())
 		{
-			if (terminated.load(std::memory_order_acquire))
+			if (priv::gtl_async_delegates->m_terminated.load(std::memory_order_acquire))
 				return polling_result::terminated;
 			std::function<void()> delegate;
 			if (queue.pop(delegate))
 				delegate();
 		}
-		return terminated.load(std::memory_order_acquire) ? polling_result::terminated : polling_result::slots_invoked;
+		return priv::gtl_async_delegates->m_terminated.load(std::memory_order_acquire) ? polling_result::terminated : polling_result::slots_invoked;
 	}
 
-	void terminate()
+	void terminate(std::thread::id id)
 	{
-		priv::hashmap_signal_queue::instance().terminates();
+		priv::hashmap_signal_queue::instance().terminates(id);
 	}
 }
 
