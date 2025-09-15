@@ -91,7 +91,7 @@ jobs:
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            ./run_tests.exe
+            ./run_tests.exe -s
           else
-            ./run_tests
+            ./run_tests -s
           fi
