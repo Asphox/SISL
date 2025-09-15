@@ -67,7 +67,7 @@ jobs:
         if: matrix.compiler == 'clang' && runner.os == 'Windows'
         uses: KyleMayes/install-llvm-action@v1
         with:
-          version: '19'
+          version: '16'
 
       # --- Compilation Steps ---
       
