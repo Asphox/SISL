@@ -469,9 +469,9 @@ TEST_CASE("Copy counter and perfect forwarding on queued connection")
             CPerfectForwardingReceiver c;
             sisl::jthread worker([](std::stop_token token)
             {
-                while (!token.stop_requested())
+                while (!token.stop_requested() && sisl::poll() != sisl::polling_result::terminated)
                 {
-                    sisl::poll();
+
                 }
             });
             sisl::signal<CCopyCounterMovable> sig;
@@ -487,9 +487,9 @@ TEST_CASE("Copy counter and perfect forwarding on queued connection")
         CPerfectForwardingReceiver c;
         sisl::jthread worker([](std::stop_token token)
         {
-            while (!token.stop_requested())
+            while (!token.stop_requested() && sisl::poll() != sisl::polling_result::terminated)
             {
-                sisl::poll();
+
             }
         });
         sisl::signal<CCopyCounterMovable> sig;
@@ -503,9 +503,9 @@ TEST_CASE("Copy counter and perfect forwarding on queued connection")
         CPerfectForwardingReceiver c;
         sisl::jthread worker([](std::stop_token token)
         {
-            while (!token.stop_requested())
+            while (!token.stop_requested() && sisl::poll() != sisl::polling_result::terminated)
             {
-                sisl::poll();
+
             }
         });
         int counter = 0;
@@ -520,9 +520,9 @@ TEST_CASE("Copy counter and perfect forwarding on queued connection")
     {
         sisl::jthread worker([](std::stop_token token)
         {
-            while (!token.stop_requested())
+            while (!token.stop_requested() && sisl::poll() != sisl::polling_result::terminated)
             {
-                sisl::poll();
+
             }
         });
         int counter = 0;
@@ -536,9 +536,9 @@ TEST_CASE("Copy counter and perfect forwarding on queued connection")
     {
         sisl::jthread worker([](std::stop_token token)
         {
-            while (!token.stop_requested())
+            while (!token.stop_requested() && sisl::poll() != sisl::polling_result::terminated)
             {
-                sisl::poll();
+
             }
         });
         int counter = 0;
@@ -552,9 +552,9 @@ TEST_CASE("Copy counter and perfect forwarding on queued connection")
     {
         sisl::jthread worker([](std::stop_token token)
         {
-            while (!token.stop_requested())
+            while (!token.stop_requested() && sisl::poll() != sisl::polling_result::terminated)
             {
-                sisl::poll();
+
             }
         });
         int counter = 0;
@@ -569,9 +569,9 @@ TEST_CASE("Copy counter and perfect forwarding on queued connection")
     {
         sisl::jthread worker([](std::stop_token token)
         {
-            while (!token.stop_requested())
+            while (!token.stop_requested() && sisl::poll() != sisl::polling_result::terminated)
             {
-                sisl::poll();
+
             }
         });
         int counter = 0;
@@ -585,9 +585,9 @@ TEST_CASE("Copy counter and perfect forwarding on queued connection")
     {
         sisl::jthread worker([](std::stop_token token)
         {
-            while (!token.stop_requested())
+            while (!token.stop_requested() && sisl::poll() != sisl::polling_result::terminated)
             {
-                sisl::poll();
+
             }
         });
         int counter = 0;
@@ -601,9 +601,9 @@ TEST_CASE("Copy counter and perfect forwarding on queued connection")
     {
         sisl::jthread worker([](std::stop_token token)
         {
-            while (!token.stop_requested())
+            while (!token.stop_requested() && sisl::poll() != sisl::polling_result::terminated)
             {
-                sisl::poll();
+
             }
         });
         int counter = 0;
