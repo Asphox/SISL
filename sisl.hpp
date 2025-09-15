@@ -1060,32 +1060,6 @@ namespace SISL_NAMESPACE
 		emit_impl(std::forward<UARGS>(args)...);
 	}
 
-	// Custom mechanism for perfect forwarding with SISL.
-	//template<typename TSIGNALARGS, typename TEMITARGS, bool MOVE_INSTEAD_OF_COPY_IF_POSSIBLE = false>
-	//constexpr decltype(auto) forward(TEMITARGS&& arg)
-	//{
-	//	// Signal takes lvalue-ref
-	//	if constexpr (std::is_reference_v<TSIGNALARGS>)
-	//	{
-	//		return std::forward<TEMITARGS>(arg);
-	//	}
-	//	// Signal takes value
-	//	else
-	//	{
-	//		constexpr bool MOVE_INSTEAD_OF_COPY = MOVE_INSTEAD_OF_COPY_IF_POSSIBLE && std::is_move_constructible_v<TSIGNALARGS>;
-	//		// Emission has lvalue-ref ... we MUST copy !
-	//		if constexpr (!MOVE_INSTEAD_OF_COPY && std::is_lvalue_reference_v<TEMITARGS>)
-	//		{
-	//			return static_cast<TSIGNALARGS>(arg);
-	//		}
-	//		// else we CAN move !
-	//		else
-	//		{
-	//			return std::move(arg);
-	//		}
-	//	}
-	//}
-
 	template<typename... TARGS>
 	template<typename... UARGS>
 	void signal<TARGS...>::emit_impl(UARGS&&... args)
@@ -1101,6 +1075,10 @@ namespace SISL_NAMESPACE
 				return;
 			slots_copy = *m_slots;
 		}
+
+		// We use a shared_ptr to a tuple to avoid copying the arguments for each queued slot
+		std::shared_ptr<std::tuple<TARGS...>> args_tuple;
+
 		for (auto& sp_slot : slots_copy)
 		{
 			auto& slot = *sp_slot;
@@ -1114,6 +1092,10 @@ namespace SISL_NAMESPACE
 			bool result = true;
 			if (must_queue)
 			{
+				// We need to store the arguments in a tuple to be able to pass them to queued calls without copying them each time
+				if(!args_tuple)
+					args_tuple = std::make_shared<std::tuple<TARGS...>>(args...);
+
 				const std::thread::id target_thread = info.thread_affinity == priv::get_empty_thread_id() ? current_thread : info.thread_affinity;
 				// if the slot is blocking_queued, we need to wait for the slot to finish
 				if (type_without_flags == type_connection::blocking_queued)
@@ -1125,12 +1107,12 @@ namespace SISL_NAMESPACE
 					}
 					std::promise<void> done;
 					auto future_done = done.get_future();
-					priv::enqueue([sp_slot, &done, ...args_capture = args]() mutable
+					priv::enqueue([sp_slot, &done, args_tuple]() mutable
 					{
 						priv::gtl_current_sender = sp_slot->get_info().owner;
 						try
 						{
-							(*sp_slot.get())(std::move(args_capture)...);
+							std::apply(*sp_slot.get(), *args_tuple);
 							done.set_value();
 						}
 						catch (...)
@@ -1144,10 +1126,10 @@ namespace SISL_NAMESPACE
 				// If the slot is queued, we just enqueue it
 				else
 				{
-					priv::enqueue([sp_slot, ...args_capture = args]() mutable
+					priv::enqueue([sp_slot, args_tuple]() mutable
 					{
 						priv::gtl_current_sender = sp_slot->get_info().owner;
-						(*sp_slot.get())(std::move(args_capture)...);
+						std::apply(*sp_slot.get(), *args_tuple);
 						priv::gtl_current_sender = nullptr;
 					}, target_thread);
 				}
@@ -1416,11 +1398,6 @@ namespace SISL_NAMESPACE
 						it->second.get()->m_cv.notify_all();
 					}
 				}
-			}
-
-			void terminate(std::thread::id id)
-			{
-
 			}
 
 			std::unordered_map<std::thread::id, std::unique_ptr<async_delegates>> m_async_delegates;
