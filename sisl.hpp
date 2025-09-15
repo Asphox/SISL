@@ -884,6 +884,11 @@ namespace SISL_NAMESPACE
 
 namespace SISL_NAMESPACE
 {
+	namespace priv
+	{
+		extern thread_local void* gtl_current_sender;
+	}
+
 	template<typename... TARGS>
 	template<typename TINSTANCE, typename TMETHOD>
 	void signal<TARGS...>::connect_to_instance_impl(void* owner, TINSTANCE& instance, TMETHOD method, std::thread::id thread_affinity, type_connection type)
@@ -1311,8 +1316,6 @@ namespace SISL_NAMESPACE
 				return m_head.load(std::memory_order_acquire) == m_tail.load(std::memory_order_acquire);
 			}
 		};
-
-		extern thread_local void* gtl_current_sender;
 	}
 
 	template<typename TSENDER>
