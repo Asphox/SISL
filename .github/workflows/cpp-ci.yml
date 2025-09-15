@@ -69,6 +69,10 @@ jobs:
         with:
           version: '15' # A recent version that supports C++20 
 
+      - name: Set up MSVC developer environment
+        if: matrix.compiler == 'msvc'
+        uses: microsoft/setup-msvc@v1
+
       # --- Compilation Steps ---
       
       - name: Compile with GCC / MinGW
