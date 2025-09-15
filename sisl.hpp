@@ -135,7 +135,7 @@ namespace SISL_NAMESPACE
 	* @return pointer to the sender object. if nullptr, the current execution is not in a signal context.
 	*/
 	template<typename TSENDER>
-	inline TSENDER* sender() { return priv::gtl_current_sender ? static_cast<TSENDER*>(priv::gtl_current_sender) : nullptr; }
+	TSENDER* sender();
 
 	enum class polling_result : std::uint8_t
 	{
@@ -201,7 +201,7 @@ namespace SISL_NAMESPACE
 		}
 	};
 
-	#define __SISL_SIG_DEFINE(name, ...) SISL_NAMESPACE##::signal<__VA_ARGS__> name;
+	#define __SISL_SIG_DEFINE(name, ...) SISL_NAMESPACE::signal<__VA_ARGS__> name;
 	#define __SISL_STR_DEFINE(x) #x
 	#define __SISL_STRINGIFY_DEFINE(x) __SISL_STR_DEFINE(x)
 	
@@ -225,7 +225,7 @@ namespace SISL_NAMESPACE
 		inline void join() { m_thread.join(); }
 		inline std::thread::id get_id() const noexcept { return m_thread.get_id(); }
 		inline bool joinable() const noexcept { return m_thread.joinable(); }
-		inline bool request_stop() noexcept { sisl::terminate(get_id());  m_thread.request_stop(); }
+		inline bool request_stop() noexcept { sisl::terminate(get_id());  return m_thread.request_stop(); }
 	private:
 		std::jthread m_thread;
 	};
@@ -394,7 +394,7 @@ namespace SISL_NAMESPACE
 		template <typename T>
 		inline constexpr bool is_shared_ptr_v = is_shared_ptr<T>::value;
 
-		consteval std::thread::id get_empty_thread_id() noexcept { return std::thread::id(); }
+		inline std::thread::id get_empty_thread_id() noexcept { return std::thread::id(); }
 		struct delegate_info
 		{
 			void*			owner;			///< Pointer to the owner of the delegate (can be nullptr).
@@ -1311,7 +1311,12 @@ namespace SISL_NAMESPACE
 				return m_head.load(std::memory_order_acquire) == m_tail.load(std::memory_order_acquire);
 			}
 		};
+
+		extern thread_local void* gtl_current_sender;
 	}
+
+	template<typename TSENDER>
+	TSENDER* sender() { return priv::gtl_current_sender ? static_cast<TSENDER*>(priv::gtl_current_sender) : nullptr; }
 }
 // <=====================================================================================>
 // <=============				  Statics implementation					=============>
