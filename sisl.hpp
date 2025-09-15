@@ -1077,7 +1077,7 @@ namespace SISL_NAMESPACE
 		}
 
 		// We use a shared_ptr to a tuple to avoid copying the arguments for each queued slot
-		std::shared_ptr<std::tuple<TARGS...>> args_tuple;
+		std::shared_ptr<std::tuple<std::remove_reference_t<TARGS>...>> args_tuple;
 
 		for (auto& sp_slot : slots_copy)
 		{
@@ -1094,7 +1094,7 @@ namespace SISL_NAMESPACE
 			{
 				// We need to store the arguments in a tuple to be able to pass them to queued calls without copying them each time
 				if(!args_tuple)
-					args_tuple = std::make_shared<std::tuple<TARGS...>>(args...);
+					args_tuple = std::make_shared<std::tuple<std::remove_reference_t<TARGS>...>>(args...);
 
 				const std::thread::id target_thread = info.thread_affinity == priv::get_empty_thread_id() ? current_thread : info.thread_affinity;
 				// if the slot is blocking_queued, we need to wait for the slot to finish
