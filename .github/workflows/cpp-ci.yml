@@ -1,0 +1,97 @@
+# Workflow name that will appear in the GitHub Actions tab
+name: SISL C++ CI (Multi-compiler)
+
+# Events that trigger the workflow run
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+# A list of jobs to run
+jobs:
+  build-and-test:
+    # Use matrix variables for a descriptive job name
+    name: ${{ matrix.name }}
+
+    # The strategy matrix defines all build configurations
+    strategy:
+      # Ensures all jobs in the matrix run to completion, even if one fails
+      fail-fast: false
+      matrix:
+        # 'include' allows defining a list of full configurations
+        include:
+          # --- Linux Configurations ---
+          - os: ubuntu-latest
+            compiler: g++
+            name: GCC on Linux
+          - os: ubuntu-latest
+            compiler: clang
+            name: Clang on Linux
+          
+          # --- Windows Configurations ---
+          - os: windows-latest
+            compiler: msvc
+            name: MSVC on Windows
+          - os: windows-latest
+            compiler: mingw
+            name: MinGW on Windows
+          - os: windows-latest
+            compiler: clang
+            name: Clang on Windows
+
+          # --- macOS Configuration ---
+          - os: macos-latest
+            compiler: clang
+            name: Clang on macOS
+
+    # Run the job on the OS defined in the matrix
+    runs-on: ${{ matrix.os }}
+
+    # Sequence of steps for each job in the matrix
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      # --- Environment Setup Steps ---
+      
+      - name: Set up MinGW-w64 (Windows)
+        if: matrix.compiler == 'mingw'
+        uses: egor-tensin/setup-mingw@v2
+
+      - name: Set up Clang (Linux)
+        if: matrix.compiler == 'clang' && runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang
+
+      - name: Set up Clang (Windows)
+        if: matrix.compiler == 'clang' && runner.os == 'Windows'
+        uses: KyleMayes/install-llvm-action@v1
+        with:
+          version: '15' # A recent version that supports C++20
+
+      # --- Compilation Steps ---
+      
+      - name: Compile with GCC / MinGW
+        if: matrix.compiler == 'g++' || matrix.compiler == 'mingw'
+        run: g++ -std=c++20 -Wall -Wextra -pthread -o run_tests TESTS/tests_sisl.cpp
+
+      - name: Compile with Clang
+        if: matrix.compiler == 'clang'
+        run: clang++ -std=c++20 -Wall -Wextra -pthread -o run_tests TESTS/tests_sisl.cpp
+
+      - name: Compile with MSVC
+        if: matrix.compiler == 'msvc'
+        shell: pwsh
+        run: cl.exe /std:c++20 /EHsc /W4 /Fe:run_tests.exe TESTS/tests_sisl.cpp
+
+      # --- Run Step ---
+
+      - name: Run tests
+        # Use bash shell on all platforms for consistent scripting
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            ./run_tests.exe
+          else
+            ./run_tests
+          fi
